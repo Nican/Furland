@@ -31,19 +31,16 @@ namespace FurlandGraph.Controllers
 
         [HttpGet]
         [Route("{id}/picture")]
-        public async Task<HttpResponseMessage> GetProfilePicture(long id)
+        public async Task<ActionResult> GetProfilePicture(long id)
         {
             var picture = await Context.ProfilePictures.FindAsync(id);
 
             if(picture == null)
             {
-                return new HttpResponseMessage(HttpStatusCode.NotFound);
+                return NotFound();
             }
 
-            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK);
-            result.Content = new ByteArrayContent(picture.Data);
-            result.Content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
-            return result;
+            return File(picture.Data, "image/png");
         }
 
         [HttpGet]

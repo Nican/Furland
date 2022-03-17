@@ -28,7 +28,7 @@ namespace FurlandGraph.Services
         {
             try
             {
-                int maxWorkers = 1;
+                int maxWorkers = 100;
                 var trackers = new Dictionary<Task<bool>, TwitterClientTracker>();
 
                 while (true)
@@ -52,7 +52,8 @@ namespace FurlandGraph.Services
                             bool result = await completedTask; // If the pagination is finished, remove the work item
                             if (result)
                             {
-                                Context.WorkItems.Remove(tracker.WorkItem);
+                                var workItemToRemove = await Context.WorkItems.FindAsync(tracker.WorkItemId);
+                                Context.WorkItems.Remove(workItemToRemove);
                                 await Context.SaveChangesAsync();
                             }
                         }
@@ -88,14 +89,14 @@ namespace FurlandGraph.Services
                         tracker = new TwitterClientTracker(token, client);
                     }
 
-                    var workItem = await GetNextWorkItem(trackers.Values.Select(t => t.WorkItem.Id).ToList()); // Find new user to crawl
-                    if (workItem == null)
+                    var workItemId = await GetNextWorkItem(trackers.Values.Select(t => t.WorkItemId).ToList()); // Find new user to crawl
+                    if (!workItemId.HasValue)
                     {
                         await Task.Delay(TimeSpan.FromSeconds(1));
                         continue;
                     }
 
-                    tracker.WorkItem = workItem;
+                    tracker.WorkItemId = workItemId.Value;
                     var task = Task.Run(() => Harvest(tracker)); // Start async worker
                     trackers[task] = tracker;
                 }
@@ -126,39 +127,31 @@ namespace FurlandGraph.Services
                 .FirstOrDefaultAsync();
         }
 
-        public async Task<WorkItem> GetNextWorkItem(List<long> activeIds)
+        public async Task<long?> GetNextWorkItem(List<long> activeIds)
         {
-            return await this.Context.WorkItems
+            var workItem = await this.Context.WorkItems
                 .Where(t => !activeIds.Contains(t.Id))
                 .OrderBy(t => t.Id)
                 .FirstOrDefaultAsync();
+            return workItem?.Id;
         }
 
         public async Task<bool> Harvest(TwitterClientTracker tracker)
         {
             using var dbContext = await ContextFactory.CreateDbContextAsync();
-            var workItem = tracker.WorkItem;
+            var workItem = await dbContext.WorkItems.FindAsync(tracker.WorkItemId);
             var iterator = GetIterator(workItem.Type);
             var dbUser = await dbContext.Users.FindAsync(workItem.UserId);
 
-            if (dbUser != null)
+            if (dbUser != null && dbUser.Deleted)
             {
-                if (dbUser.Deleted)
-                {
-                    return true;
-                }
-
-                if (!iterator.UserCanUpdate(dbUser))
-                {
-                    dbUser.FriendsCollected = DateTime.UtcNow;
-                    await dbContext.SaveChangesAsync();
-                    return true;
-                }
+                return true;
             }
 
             try
             {
                 var friend = await tracker.TwitterClient.Users.GetUserAsync(workItem.UserId);
+                // TODO: Do we call the user API too often?
                 await UserService.CollectUser(dbContext, friend);
 
                 if (friend.Protected)
@@ -169,6 +162,14 @@ namespace FurlandGraph.Services
             catch (TwitterException ex) when (ex.StatusCode == 404 && ex.Content.Contains("User not found"))
             {
                 await UserService.AddDeletedUser(dbContext, workItem.UserId);
+                return true;
+            }
+
+
+            if (!iterator.UserCanUpdate(dbUser))
+            {
+                dbUser.FriendsCollected = DateTime.UtcNow;
+                await dbContext.SaveChangesAsync();
                 return true;
             }
 
@@ -191,9 +192,8 @@ namespace FurlandGraph.Services
 
         public async Task<bool> HarvestFollowers(FurlandContext dbContext, UserRelationIterator userRelations, TwitterClientTracker tracker)
         {
-            var workItem = tracker.WorkItem;
+            var workItem = await dbContext.WorkItems.FindAsync(tracker.WorkItemId);
             var iterator = userRelations.GetIterator(tracker.TwitterClient, workItem.UserId, workItem.Cursor);
-
 
             if (workItem.UserIds == null)
             {
@@ -302,7 +302,9 @@ namespace FurlandGraph.Services
     {
         public TwitterToken Token { get; }
         public TwitterClient TwitterClient { get; }
-        public WorkItem WorkItem { get; set; }
+        // public WorkItem WorkItem { get; set; }
+
+        public long WorkItemId { get; set; }
 
         public int CallsLeft = 15;
 

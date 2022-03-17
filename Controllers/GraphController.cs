@@ -60,7 +60,7 @@ namespace FurlandGraph.Controllers
 
                 yield return new
                 {
-                    Id = user.Id,
+                    Id = user.Id.ToString(),
                     user.ScreenName,
                     user.ProfileImageUrl,
                 };
@@ -81,7 +81,7 @@ namespace FurlandGraph.Controllers
 
             if (user.FriendsCollected == null || user.FriendsCollected < past)
             {
-                if(!await Context.WorkItems.Where(t=> t.UserId == user.Id).AnyAsync())
+                if(!await Context.WorkItems.Where(t=> t.UserId == user.Id && t.Type == "friends").AnyAsync())
                 {
                     var workitem = new WorkItem()
                     {
@@ -90,6 +90,7 @@ namespace FurlandGraph.Controllers
                         Type = "friends",
                     };
                     Context.WorkItems.Add(workitem);
+                    await Context.SaveChangesAsync();
                 }
 
                 return new LoadStatus()
@@ -246,7 +247,7 @@ order by id1 asc, id2 asc";
 
                     return new GraphCacheFriendItem()
                     {
-                        Id = friend.Id,
+                        Id = friend.Id.ToString(),
                         ScreenName = friend.ScreenName,
                         ProfileImageUrl = friend.ProfileImageUrl,
                     };

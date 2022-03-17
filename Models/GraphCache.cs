@@ -25,7 +25,7 @@ namespace FurlandGraph.Models
     public class GraphCacheFriendItem
     {
         [Key("id")]
-        public long Id { get; set; }
+        public string Id { get; set; }
 
         [Key("screenName")]
         public string ScreenName { get; set; }
