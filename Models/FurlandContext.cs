@@ -84,6 +84,7 @@ namespace FurlandGraph.Models
                 entity.Property(e => e.UserId).HasColumnName("userId");
                 entity.Property(e => e.Type).HasColumnName("type");
                 entity.Property(e => e.Data).HasColumnName("data");
+                entity.Property(e => e.CreatedAt).HasColumnName("createdat");
                 entity.HasKey(c => new { c.UserId, c.Type });
             });
 

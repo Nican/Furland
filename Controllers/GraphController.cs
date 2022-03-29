@@ -250,6 +250,9 @@ order by id1 asc, id2 asc";
                         Id = friend.Id.ToString(),
                         ScreenName = friend.ScreenName,
                         ProfileImageUrl = friend.ProfileImageUrl,
+                        FollowersCount = friend.FollowersCount,
+                        FriendsCount = friend.FriendsCount,
+                        StatusesCount = friend.StatusesCount,
                     };
                 }).ToList(),
                 MutualMatrix = muturalMatrix.ToList(),

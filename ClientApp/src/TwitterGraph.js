@@ -7,12 +7,31 @@ import { encode, decode } from "@msgpack/msgpack";
 let screenSize = 3200;
 let nodeRadius = 16;
 
+var btn = document.querySelector('button');
+var svg = document.querySelector('svg');
+var canvas = document.querySelector('canvas');
+
+function triggerDownload (imgURI) {
+  var evt = new MouseEvent('click', {
+    view: window,
+    bubbles: false,
+    cancelable: true
+  });
+
+  var a = document.createElement('a');
+  a.setAttribute('download', 'MY_COOL_IMAGE.png');
+  a.setAttribute('href', imgURI);
+  a.setAttribute('target', '_blank');
+
+  a.dispatchEvent(evt);
+}
 export default class TwitterGraph extends Component {
     constructor(props) {
         super(props);
 
         this.mouseEnter = this.mouseEnter.bind(this);
         this.onMouseClick = this.onMouseClick.bind(this);
+        this.saveAsPng = this.saveAsPng.bind(this);
         this.state = {};
         this.nodeRefs = {};
         this.gui = new GUI();
@@ -126,6 +145,7 @@ export default class TwitterGraph extends Component {
         this.graph.clearEdges();
         const nodeCount = this.nodeCount;
         const followerMatrix = this.followerMatrix;
+        const followerData = this.followerData;
         const data = this.data;
 
         if (this.edgeConfig.option === 'Basic') {
@@ -165,9 +185,11 @@ export default class TwitterGraph extends Component {
                     .sort((a, b) => {
                         const followA = followerMatrix[a[1] * nodeCount + b[1]];
                         const followB = followerMatrix[b[1] * nodeCount + a[1]];
+                        const profileA = followerData[a[1]];
+                        const profileB = followerData[b[1]];
 
                         //if (followB == followA) {
-                        return b[0] - a[0];
+                        return (b[0] - a[0]) / profileB.friendsCount;
                         //}
 
                         //return followB - followA;
@@ -220,12 +242,39 @@ export default class TwitterGraph extends Component {
         this.graph.nodes().map((item, idx) => {
             const attr = this.graph.getNodeAttributes(item);
             const ref = this.nodeRefs[idx.toString()].current;
+            const x = Math.floor(attr.x + screenSize / 2);
+            const y = Math.floor(attr.y + screenSize / 2);
 
-            if (ref) {
+            if (ref.cx != x || ref.cy != y) {
                 ref.setAttribute('cx', attr.x + screenSize / 2);
                 ref.setAttribute('cy', attr.y + screenSize / 2);
             }
         });
+    }
+
+    saveAsPng() {
+        var canvas = document.getElementById('canvas');
+        var ctx = canvas.getContext('2d');
+        var data = (new XMLSerializer()).serializeToString(document.querySelector('svg'));
+        var DOMURL = window.URL || window.webkitURL || window;
+        console.log(data);
+      
+        var img = new Image();
+        var svgBlob = new Blob([data], {type: 'image/svg+xml;charset=utf-8'});
+        var url = DOMURL.createObjectURL(svgBlob);
+      
+        img.onload = function () {
+          ctx.drawImage(img, 0, 0);
+          DOMURL.revokeObjectURL(url);
+      
+          var imgURI = canvas
+              .toDataURL('image/png')
+              .replace('image/png', 'image/octet-stream');
+      
+          triggerDownload(imgURI);
+        };
+      
+        img.src = url;
     }
 
     render() {
@@ -235,6 +284,7 @@ export default class TwitterGraph extends Component {
 
         return <>
             <div style={{ position: 'absolute', left: '0px', width: '200px', top: '0px', bottom: '0px', overflow: 'auto' }}>
+                <button onClick={this.saveAsPng}>Save as PNG</button>
                 {this.state.selectedNode && (<UserNodeDetails
                     selected={this.state.selectedNode}
                     followerData={this.followerData}

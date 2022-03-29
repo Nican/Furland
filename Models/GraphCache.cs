@@ -9,6 +9,8 @@ namespace FurlandGraph.Models
         public string Type { get; set; }
 
         public byte[] Data { get; set; }
+
+        public DateTime CreatedAt { get; set; }
     }
 
     [MessagePackObject]
@@ -32,5 +34,14 @@ namespace FurlandGraph.Models
 
         [Key("profileImageUrl")]
         public string ProfileImageUrl { get; set; }
+
+        [Key("followersCount")]
+        public long FollowersCount { get; set; }
+
+        [Key("friendsCount")]
+        public long FriendsCount { get; set; }
+
+        [Key("statusesCount")]
+        public long StatusesCount { get; set; }
     }
 }
