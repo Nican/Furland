@@ -53,6 +53,7 @@ namespace FurlandGraph
 
             services.AddSingleton<UserService>();
             services.AddScoped<HarvestService>();
+            services.AddScoped<MatrixService>();
 
             services.AddMvc();
             // services.AddControllersWithViews();
@@ -76,12 +77,12 @@ namespace FurlandGraph
 
             app.UseEndpoints(endpoints =>
             {
+                endpoints.MapFallbackToFile("index.html");
+
                 endpoints.MapControllerRoute(
                     name: "default",
                     pattern: "{controller}/{action=Index}/{id?}");
             });
-
-            // app.MapFallbackToFile("index.html");
 
             // app.UseAuthorization();
 

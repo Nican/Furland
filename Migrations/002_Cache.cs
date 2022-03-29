@@ -10,7 +10,8 @@ namespace FurlandGraph.Migrations
              Execute(@"CREATE TABLE public.""graphCache"" (
 	""userId"" int8 NOT NULL,
 	""type"" varchar(64) NOT NULL,
-	""data"" bytea NOT NULL,
+	""data"" bytea NULL,
+  finishedAt timestamp NULL,
 	createdat timestamp NULL DEFAULT CURRENT_TIMESTAMP,
 	CONSTRAINT ""graphCache_pkey"" PRIMARY KEY (""userId"", ""type"")
 )");

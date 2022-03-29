@@ -10,7 +10,9 @@ namespace FurlandGraph.Models
 
         public byte[] Data { get; set; }
 
-        public DateTime CreatedAt { get; set; }
+        public DateTime? FinishedAt { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 
     [MessagePackObject]

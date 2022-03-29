@@ -30,18 +30,23 @@ namespace FurlandGraph
             {
                 var services = serviceScope.ServiceProvider;
 
+                // Run migrations
                 using var context = services.GetRequiredService<FurlandContext>();
                 var databaseProvider = new PostgresqlDatabaseProvider(context.Database.GetDbConnection());
                 var migrator = new SimpleMigrator(typeof(InitialCreate).Assembly, databaseProvider);
                 migrator.Load();
                 migrator.MigrateToLatest();
 
-                // Run migrations
                 var databaseService = services.GetRequiredService<HarvestService>();
-
                 _ = Task.Run(databaseService.ParallelRun);
 
-                host.Run();
+                using (var serviceScope2 = host.Services.CreateScope())
+                {
+                    var matrixService = serviceScope2.ServiceProvider.GetRequiredService<MatrixService>();
+                    _ = Task.Run(matrixService.RunAsync);
+
+                    host.Run();
+                }
             }
         }
 

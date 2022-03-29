@@ -10,8 +10,9 @@ export default class App extends Component {
 
     render() {
         return <div style={{ position: 'absolute', left: '0px', right: '0px', top: '0px', bottom: '0px' }}>
-            <div style={{ position: 'absolute', left: '0px', width: '200px', top: '0px', height: '50px', overflow: 'auto' }}>
+            <div style={{ position: 'absolute', left: '0px', width: '400px', top: '0px', height: '50px', overflow: 'hidden' }}>
                 <LoginTwitterButton />
+                Super secret project - please do not share.
             </div>
             <div style={{ position: 'absolute', left: '0px', right: '0px', top: '50px', bottom: '0px', overflow: 'auto' }}>
                 <Switch>
@@ -45,7 +46,7 @@ const UserLoadDataComponent = ({ screenName, userLoadData, setUserLoadData }) =>
     useEffect(() => {
         async function fetchData() {
 
-            const response = await fetch(`/api/graph/user/${screenName}/status`);
+            const response = await fetch(`/api/graph/user/${screenName}/status?type=friends`);
             const json = await response.json();
             setUserLoadData(json);
 
@@ -80,6 +81,10 @@ const StageDetails = ({ screenName, stage }) => {
 
     if (stage === 2) {
         return <div>Stage 2: Waiting to collect {screenName}'s friends friends...</div>;
+    }
+
+    if (stage === 3) {
+        return <div>Stage 3: Calculating friendship graph {screenName}...</div>;
     }
 
     return <></>;

@@ -49,7 +49,7 @@ export default class TwitterGraph extends Component {
 
         this.edgeConfig = {
             option: 'TopN',
-            topN: 10
+            topN: 20
         };
 
         this.gui.add(this.config, 'barnesHutOptimize');
@@ -106,15 +106,13 @@ export default class TwitterGraph extends Component {
     }
 
     async componentDidMount() {
-        const [response, response3] = await Promise.all([
+        const [response] = await Promise.all([
             fetch(`/api/graph/user/${this.props.screenName}/matrix`),
-            fetch("/api/graph/friendmatrix"),
         ]);
 
         const data = decode(await response.arrayBuffer());
         this.data = data.mutualMatrix;
         this.followerData = data.friends;
-        this.followerMatrix = await response3.json();
         const nodeCount = Math.sqrt(this.data.length);
 
         this.graph = new Graph();
@@ -144,7 +142,6 @@ export default class TwitterGraph extends Component {
 
         this.graph.clearEdges();
         const nodeCount = this.nodeCount;
-        const followerMatrix = this.followerMatrix;
         const followerData = this.followerData;
         const data = this.data;
 
@@ -183,8 +180,6 @@ export default class TwitterGraph extends Component {
                         return t[1] !== x && (t[0] > 0) && (data[t[1] * nodeCount + x] > t[0] * 0.25); // && ((data[t[1] * nodeCount + x] > t[0] * 0.25) || t[0] < 10)
                     })
                     .sort((a, b) => {
-                        const followA = followerMatrix[a[1] * nodeCount + b[1]];
-                        const followB = followerMatrix[b[1] * nodeCount + a[1]];
                         const profileA = followerData[a[1]];
                         const profileB = followerData[b[1]];
 
@@ -282,9 +277,9 @@ export default class TwitterGraph extends Component {
             return <div />;
         }
 
+        // <button onClick={this.saveAsPng}>Save as PNG</button>
         return <>
             <div style={{ position: 'absolute', left: '0px', width: '200px', top: '0px', bottom: '0px', overflow: 'auto' }}>
-                <button onClick={this.saveAsPng}>Save as PNG</button>
                 {this.state.selectedNode && (<UserNodeDetails
                     selected={this.state.selectedNode}
                     followerData={this.followerData}

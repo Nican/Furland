@@ -2,12 +2,6 @@ using Dapper;
 using FurlandGraph.Models;
 using MessagePack;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
-using Tweetinvi;
-using Tweetinvi.Exceptions;
-using Tweetinvi.Iterators;
-using Tweetinvi.Models;
-using Tweetinvi.Parameters;
 
 namespace FurlandGraph.Services
 {
@@ -31,20 +25,29 @@ namespace FurlandGraph.Services
 
         public async Task RunAsync()
         {
-            while (true)
+            Console.WriteLine("Starting matrix service...");
+            try
             {
-                var item = await this.Context.GraphCache
-                    .Where(t => t.Data == null)
-                    .OrderByDescending(t => t.CreatedAt)
-                    .FirstOrDefaultAsync();
-
-                if (item == null)
+                while (true)
                 {
-                    continue;
-                }
+                    var item = await this.Context.GraphCache
+                        .Where(t => t.Data == null)
+                        .OrderByDescending(t => t.CreatedAt)
+                        .FirstOrDefaultAsync();
 
-                await CalculateItem(item, CancellationToken.None);
-                Context.ChangeTracker.Clear();
+                    if (item == null)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(3));
+                        continue;
+                    }
+
+                    await CalculateItem(item, CancellationToken.None);
+                    Context.ChangeTracker.Clear();
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
             }
         }
 
@@ -55,7 +58,7 @@ namespace FurlandGraph.Services
             var userFriends = await Context.UserFriends
                 .Where(t => t.UserId == userId && t.Friend.Protected == false && t.Friend.Deleted == false)
                 .Select(t => t.FriendId)
-                .ToListAsync();
+                .ToListAsync(cancellationToken: cancellationToken);
             userFriends.Add(userId);
             userFriends.Sort();
 
@@ -83,7 +86,8 @@ namespace FurlandGraph.Services
                 MutualMatrix = muturalMatrix.ToList(),
             };
 
-            item.Data = MessagePackSerializer.Serialize(cacheItem, lz4Options);
+            item.Data = MessagePackSerializer.Serialize(cacheItem, lz4Options, cancellationToken);
+            item.FinishedAt = DateTime.UtcNow;
             await Context.SaveChangesAsync();
 
         }
@@ -145,5 +149,4 @@ select * from mutuals order by id1 asc,id2 asc;";
             }
         }
     }
-
 }

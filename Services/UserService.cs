@@ -55,9 +55,19 @@ namespace FurlandGraph.Services
             dbUser.Verified = user.Verified;
             dbUser.ProfileImageUrlFullSize = user.ProfileImageUrlFullSize;
 
-            var image = await HttpClient.GetByteArrayAsync(dbUser.ProfileImageUrl);
-            // var sqlParam = new NpgsqlParameter("data", image);
-            dbContext.Database.ExecuteSqlInterpolated($"INSERT INTO \"profilePics\"(id,data) VALUES ({user.Id}, {image}) ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data");
+            try
+            {
+                if (!string.IsNullOrEmpty(dbUser.ProfileImageUrlFullSize))
+                {
+                    var image = await HttpClient.GetByteArrayAsync(dbUser.ProfileImageUrl);
+                    // var sqlParam = new NpgsqlParameter("data", image);
+                    dbContext.Database.ExecuteSqlInterpolated($"INSERT INTO \"profilePics\"(id,data) VALUES ({user.Id}, {image}) ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
 
             await dbContext.SaveChangesAsync();
             return dbUser;
