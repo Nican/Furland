@@ -34,9 +34,6 @@ namespace FurlandGraph.Models
         [Key("screenName")]
         public string ScreenName { get; set; }
 
-        [Key("profileImageUrl")]
-        public string ProfileImageUrl { get; set; }
-
         [Key("followersCount")]
         public long FollowersCount { get; set; }
 
@@ -45,5 +42,11 @@ namespace FurlandGraph.Models
 
         [Key("statusesCount")]
         public long StatusesCount { get; set; }
+
+        [Key("lastStatus")]
+        public DateTime? LastStatus { get; set; }
+
+        [Key("friends")]
+        public List<string> Friends { get; set; }
     }
 }

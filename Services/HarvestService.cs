@@ -140,32 +140,44 @@ namespace FurlandGraph.Services
         {
             using var dbContext = await ContextFactory.CreateDbContextAsync();
             var workItem = await dbContext.WorkItems.FindAsync(tracker.WorkItemId);
-            var iterator = GetIterator(workItem.Type);
             var dbUser = await dbContext.Users.FindAsync(workItem.UserId);
 
-            if (dbUser != null && dbUser.Deleted)
+            if (dbUser != null && (dbUser.Deleted || string.IsNullOrEmpty(dbUser.ScreenName)))
             {
+                dbUser.LastUpdate = DateTime.UtcNow;
+                await dbContext.SaveChangesAsync();
                 return true;
             }
 
-            try
+            if (workItem.Type == "user")
             {
-                var friend = await tracker.TwitterClient.Users.GetUserAsync(workItem.UserId);
-                // TODO: Do we call the user API too often?
-                await UserService.CollectUser(dbContext, friend);
-
-                if (friend.Protected)
+                try
                 {
-                    return true;
+                    var friend = await tracker.TwitterClient.Users.GetUserAsync(workItem.UserId);
+                    // TODO: Do we call the user API too often?
+                    await UserService.CollectUser(dbContext, friend);
                 }
-            }
-            catch (TwitterException ex) when (ex.StatusCode == 404 && ex.Content.Contains("User not found"))
-            {
-                await UserService.AddDeletedUser(dbContext, workItem.UserId);
+                catch (TwitterException ex) when (ex.StatusCode == 404 && ex.Content.Contains("User not found"))
+                {
+                    await UserService.AddDeletedUser(dbContext, workItem.UserId);
+                }
+                catch (TwitterException ex) when (ex.StatusCode == 403 && ex.Content.Contains("User has been suspended"))
+                {
+                    await UserService.AddDeletedUser(dbContext, workItem.UserId);
+                }
+                catch (TwitterException ex) when (ex.StatusCode == 401 && ex.Content.Contains("Unauthorized"))
+                {
+                    await UserService.AddDeletedUser(dbContext, workItem.UserId);
+                }
                 return true;
             }
 
+            if (dbUser.Protected)
+            {
+                return true;
+            }
 
+            var iterator = GetIterator(workItem.Type);
             if (!iterator.UserCanUpdate(dbUser))
             {
                 dbUser.FriendsCollected = DateTime.UtcNow;
@@ -302,7 +314,6 @@ namespace FurlandGraph.Services
     {
         public TwitterToken Token { get; }
         public TwitterClient TwitterClient { get; }
-        // public WorkItem WorkItem { get; set; }
 
         public long WorkItemId { get; set; }
 

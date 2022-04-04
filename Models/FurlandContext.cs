@@ -45,6 +45,8 @@ namespace FurlandGraph.Models
                 entity.Property(e => e.StatusesCount).HasColumnName("statusesCount");
                 entity.Property(e => e.FollowersCollected).HasColumnName("followersCollected");
                 entity.Property(e => e.FriendsCollected).HasColumnName("friendsCollected");
+                entity.Property(e => e.LastUpdate).HasColumnName("lastUpdate");
+                entity.Property(e => e.LastStatus).HasColumnName("lastStatus");
             });
 
             modelBuilder.Entity<UserFollower>(entity =>

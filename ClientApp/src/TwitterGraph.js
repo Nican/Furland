@@ -3,28 +3,39 @@ import Graph from 'graphology';
 import FA2Layout from 'graphology-layout-forceatlas2/worker';
 import GUI from 'lil-gui';
 import { encode, decode } from "@msgpack/msgpack";
+import { MovableCanvas } from './MovableCanvas';
 
-let screenSize = 3200;
+let screenSize = 6000;
 let nodeRadius = 16;
 
 var btn = document.querySelector('button');
 var svg = document.querySelector('svg');
 var canvas = document.querySelector('canvas');
 
-function triggerDownload (imgURI) {
-  var evt = new MouseEvent('click', {
-    view: window,
-    bubbles: false,
-    cancelable: true
-  });
+function triggerDownload(imgURI) {
+    var evt = new MouseEvent('click', {
+        view: window,
+        bubbles: false,
+        cancelable: true
+    });
 
-  var a = document.createElement('a');
-  a.setAttribute('download', 'MY_COOL_IMAGE.png');
-  a.setAttribute('href', imgURI);
-  a.setAttribute('target', '_blank');
+    var a = document.createElement('a');
+    a.setAttribute('download', 'MY_COOL_IMAGE.png');
+    a.setAttribute('href', imgURI);
+    a.setAttribute('target', '_blank');
 
-  a.dispatchEvent(evt);
+    a.dispatchEvent(evt);
 }
+
+function updateNode(node: any) {
+    const attr = node.attributes;
+    const ref = attr.ref.current;
+    if (ref) {
+        ref.setAttribute('cx', attr.x);
+        ref.setAttribute('cy', attr.y);
+    }
+}
+
 export default class TwitterGraph extends Component {
     constructor(props) {
         super(props);
@@ -32,11 +43,15 @@ export default class TwitterGraph extends Component {
         this.mouseEnter = this.mouseEnter.bind(this);
         this.onMouseClick = this.onMouseClick.bind(this);
         this.saveAsPng = this.saveAsPng.bind(this);
-        this.state = {};
-        this.nodeRefs = {};
+
+
+        this.state = {
+            transform: { x: screenSize / 2, y: screenSize / 2, scale: 1.0, maxWidth: screenSize, maxHeight: screenSize },
+        };
+
         this.gui = new GUI();
         this.config = {
-            barnesHutOptimize: true,
+            barnesHutOptimize: false,
             strongGravityMode: true,
             weighted: false,
             gravity: 0.1,
@@ -86,7 +101,7 @@ export default class TwitterGraph extends Component {
     }
 
     componentWillUnmount() {
-        cancelAnimationFrame(this.anim);
+        this.layout?.kill();
         this.gui.destroy();
     }
 
@@ -118,22 +133,45 @@ export default class TwitterGraph extends Component {
         this.graph = new Graph();
         this.nodeCount = nodeCount;
 
+        this.graph.on('eachNodeAttributesUpdated', () => {
+            /*
+            for (let [_, node] of this.graph._nodes) {
+                const attr = node.attributes;
+                const ref = attr.ref.current;
+                if (ref) {
+                    ref.setAttribute('cx', attr.x);
+                    ref.setAttribute('cy', attr.y);
+                }
+            }
+            */
+
+            this.graph._nodes.forEach(updateNode);
+            /*
+            this.graph.forEachNode((idx, attr) => {
+                const ref = attr.ref.current;
+                if (ref) {
+                    ref.setAttribute('cx', attr.x + screenSize / 2);
+                    ref.setAttribute('cy', attr.y + screenSize / 2);
+                }
+            });
+            */
+        });
+
         const nodes = [];
 
         this.followerData.forEach((item, idx) => {
+            const ref = React.createRef();
             const node = this.graph.addNode(idx, {
                 x: (Math.random() - 0.5) * screenSize,
-                y: (Math.random() - 0.5) * screenSize
+                y: (Math.random() - 0.5) * screenSize,
+                ref,
             });
             nodes.push(node);
-
-            this.nodeRefs[idx.toString()] = React.createRef();
         });
         this.reset();
 
         this.setupEdges();
         this.setupForceAtlas();
-        this.anim = requestAnimationFrame(() => this.runKernel());
         this.forceUpdate();
     }
 
@@ -164,7 +202,7 @@ export default class TwitterGraph extends Component {
 
                     this.graph.mergeEdge(x.toString(), y.toString(), {
                         // weight: 1,
-                        weight: Math.pow(mutualCount, 1.5)
+                        weight: Math.sqrt(mutualCount)
                         // weight: Math.sqrt(mutualCount) / 10,
                     });
                 }
@@ -229,46 +267,28 @@ export default class TwitterGraph extends Component {
         this.layout.start();
     }
 
-    runKernel() {
-        // this.kernelOutput = this.positionKernel(this.kernelOutput, this.data);
-        // this.forceUpdate();
-        this.anim = requestAnimationFrame(() => this.runKernel());
-
-        this.graph.nodes().map((item, idx) => {
-            const attr = this.graph.getNodeAttributes(item);
-            const ref = this.nodeRefs[idx.toString()].current;
-            const x = Math.floor(attr.x + screenSize / 2);
-            const y = Math.floor(attr.y + screenSize / 2);
-
-            if (ref.cx != x || ref.cy != y) {
-                ref.setAttribute('cx', attr.x + screenSize / 2);
-                ref.setAttribute('cy', attr.y + screenSize / 2);
-            }
-        });
-    }
-
     saveAsPng() {
         var canvas = document.getElementById('canvas');
         var ctx = canvas.getContext('2d');
         var data = (new XMLSerializer()).serializeToString(document.querySelector('svg'));
         var DOMURL = window.URL || window.webkitURL || window;
         console.log(data);
-      
+
         var img = new Image();
-        var svgBlob = new Blob([data], {type: 'image/svg+xml;charset=utf-8'});
+        var svgBlob = new Blob([data], { type: 'image/svg+xml;charset=utf-8' });
         var url = DOMURL.createObjectURL(svgBlob);
-      
+
         img.onload = function () {
-          ctx.drawImage(img, 0, 0);
-          DOMURL.revokeObjectURL(url);
-      
-          var imgURI = canvas
-              .toDataURL('image/png')
-              .replace('image/png', 'image/octet-stream');
-      
-          triggerDownload(imgURI);
+            ctx.drawImage(img, 0, 0);
+            DOMURL.revokeObjectURL(url);
+
+            var imgURI = canvas
+                .toDataURL('image/png')
+                .replace('image/png', 'image/octet-stream');
+
+            triggerDownload(imgURI);
         };
-      
+
         img.src = url;
     }
 
@@ -276,6 +296,9 @@ export default class TwitterGraph extends Component {
         if (!this.graph) {
             return <div />;
         }
+
+        const cx = screenSize / 2;
+        const cy = screenSize / 2;
 
         // <button onClick={this.saveAsPng}>Save as PNG</button>
         return <>
@@ -286,62 +309,66 @@ export default class TwitterGraph extends Component {
                     slice={this.data.slice(this.state.selectedNode * this.nodeCount, this.state.selectedNode * this.nodeCount + this.nodeCount)}
                 />)}
             </div>
-            <div style={{ position: 'absolute', left: '200px', right: '0px', top: '0px', bottom: '0px', overflow: 'scroll' }}>
-                <svg viewBox={`0 0 ${screenSize} ${screenSize}`} xmlns="http://www.w3.org/2000/svg" style={{ width: `${screenSize}px` }}>
-                    <defs>
-                        {
-                            this.followerData.map((item, idx) => {
-                                if (item == null) {
-                                    return undefined;
-                                }
+            <div style={{ position: 'absolute', left: '200px', right: '0px', top: '0px', bottom: '0px', overflow: 'hidden' }}>
+                <MovableCanvas transform={this.state.transform} update={t => this.setState({ transform: t })}>
+                    <svg viewBox={`0 0 ${screenSize} ${screenSize}`} xmlns="http://www.w3.org/2000/svg" style={{ height: "100%", width: "100%" }}>
+                        <defs>
+                            {
+                                this.followerData.map((item, idx) => {
+                                    if (item == null) {
+                                        return undefined;
+                                    }
 
-                                return <pattern key={idx} id={`profileImage${idx}`} x="0%" y="0%" height="100%" width="100%"
-                                    viewBox="0 0 48 48">
-                                    <image x="0%" y="0%" width="48" height="48" xlinkHref={`/api/twitter/${item.id}/picture`}></image>
-                                </pattern>;
-                            })
-                        }
-                    </defs>
-                    {
-                        this.state.hover && this.graph.nodes().map((item, idx) => {
-                            const pt1 = this.graph.getNodeAttributes(this.state.hover);
-                            const pt2 = this.graph.getNodeAttributes(item);
-
-                            const mutuals = this.data[this.state.hover * this.nodeCount + idx];
-
-                            if (mutuals < 10) {
-                                return undefined;
+                                    return <pattern key={idx} id={`profileImage${idx}`} x="0%" y="0%" height="100%" width="100%"
+                                        viewBox="0 0 48 48">
+                                        <image x="0%" y="0%" width="48" height="48" xlinkHref={`/api/twitter/${item.id}/picture`}></image>
+                                    </pattern>;
+                                })
                             }
+                        </defs>
+                        <g transform={`translate(${cx}, ${cy})`}>
+                            {
+                                this.state.hover && this.graph.nodes().map((item, idx) => {
+                                    const pt1 = this.graph.getNodeAttributes(this.state.hover);
+                                    const pt2 = this.graph.getNodeAttributes(item);
 
-                            return <line
-                                key={idx}
-                                x1={pt1.x + screenSize / 2}
-                                y1={pt1.y + screenSize / 2}
-                                x2={pt2.x + screenSize / 2}
-                                y2={pt2.y + screenSize / 2}
-                                stroke="black"
-                                strokeWidth={Math.min(mutuals / 4, 30)}
-                            />;
-                        })
-                    }
-                    {
-                        this.graph.nodes().map((item, idx) => {
-                            const attr = this.graph.getNodeAttributes(item);
+                                    const mutuals = this.data[this.state.hover * this.nodeCount + idx];
 
-                            const user = this.followerData[idx];
+                                    if (mutuals < 10) {
+                                        return undefined;
+                                    }
 
-                            return <UserNode
-                                screenName={user?.screenName}
-                                nodeRef={this.nodeRefs[idx.toString()]}
-                                idx={idx}
-                                key={idx}
-                                nodeRadius={nodeRadius}
-                                mouseEnter={this.mouseEnter}
-                                onMouseClick={this.onMouseClick}
-                            />;
-                        })
-                    }
-                </svg>
+                                    return <line
+                                        key={idx}
+                                        x1={pt1.x + screenSize / 2}
+                                        y1={pt1.y + screenSize / 2}
+                                        x2={pt2.x + screenSize / 2}
+                                        y2={pt2.y + screenSize / 2}
+                                        stroke="black"
+                                        strokeWidth={Math.min(mutuals / 4, 30)}
+                                    />;
+                                })
+                            }
+                            {
+                                this.graph.nodes().map((item, idx) => {
+                                    const attr = this.graph.getNodeAttributes(item);
+
+                                    const user = this.followerData[idx];
+
+                                    return <UserNode
+                                        screenName={user?.screenName}
+                                        nodeRef={attr.ref}
+                                        idx={idx}
+                                        key={idx}
+                                        nodeRadius={nodeRadius}
+                                        mouseEnter={this.mouseEnter}
+                                        onMouseClick={this.onMouseClick}
+                                    />;
+                                })
+                            }
+                        </g>
+                    </svg>
+                </MovableCanvas>
             </div>
         </>;
     }

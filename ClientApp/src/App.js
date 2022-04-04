@@ -1,7 +1,8 @@
 import React, { Component, useEffect, useState } from 'react';
-import TwitterGraph from './TwitterGraph';
+import { TwitterGraph } from './graph/TwitterGraph';
 import { Switch, Route, useParams, Redirect } from 'react-router-dom';
 import { LoginTwitterButton } from './components/LoginButton';
+import { MovableCanvas } from './MovableCanvas';
 
 import './custom.css'
 
@@ -80,11 +81,15 @@ const StageDetails = ({ screenName, stage }) => {
     }
 
     if (stage === 2) {
-        return <div>Stage 2: Waiting to collect {screenName}'s friends friends...</div>;
+        return <div>Stage 2: Collecting {screenName}'s friends profile information...</div>;
     }
 
     if (stage === 3) {
-        return <div>Stage 3: Calculating friendship graph {screenName}...</div>;
+        return <div>Stage 3: Waiting to collect {screenName}'s friends friends...</div>;
+    }
+
+    if (stage === 4) {
+        return <div>Stage 4: Calculating friendship graph {screenName}...</div>;
     }
 
     return <></>;

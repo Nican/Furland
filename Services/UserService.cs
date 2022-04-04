@@ -27,6 +27,7 @@ namespace FurlandGraph.Services
                 dbContext.Users.Add(dbUser);
             }
 
+            dbUser.LastUpdate = DateTime.UtcNow;
             dbUser.Deleted = true;
 
             await dbContext.SaveChangesAsync();
@@ -54,6 +55,12 @@ namespace FurlandGraph.Services
             dbUser.Protected = user.Protected;
             dbUser.Verified = user.Verified;
             dbUser.ProfileImageUrlFullSize = user.ProfileImageUrlFullSize;
+            dbUser.LastUpdate = DateTime.UtcNow;
+
+            if (user.Status != null)
+            {
+                dbUser.LastStatus = user.Status.CreatedAt.UtcDateTime;
+            }
 
             try
             {

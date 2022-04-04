@@ -65,10 +65,52 @@ namespace FurlandGraph.Controllers
 
             var followers = await Context.UserFriends
                 .Where(t => t.UserId == user.Id && t.Friend.Protected == false && t.Friend.Deleted == false)
-                .Select(t => new { t.Friend.FriendsCollected, t.Friend.Protected, t.FriendId })
+                .Select(t => new { t.Friend.FriendsCollected, t.FriendId, t.Friend.ScreenName, t.Friend.LastUpdate })
                 .ToListAsync();
 
-            var needCollected = followers.Where(t => (t.FriendsCollected == null || t.FriendsCollected < past) && t.Protected == false).ToList();
+            var needUserCollect = followers
+                 .Where(t => t.LastUpdate < past)
+                 .ToList();
+
+
+            // Stage 2 - Collect user profiles
+            if (needUserCollect.Count > 0)
+            {
+                var needsCollectedIds = needUserCollect.Select(t => t.FriendId).ToList();
+                // Do not add work items that already exist as an work item
+                var doNotAdd = await Context.WorkItems
+                    .Where(t => needsCollectedIds.Contains(t.UserId) && t.Type == "user")
+                    .Select(t => t.UserId)
+                    .ToListAsync();
+
+                Context.WorkItems.AddRange(needUserCollect.Select(t=> t.FriendId).Except(doNotAdd).Select(t =>
+                {
+                    return new WorkItem()
+                    {
+                        ForUser = user.Id,
+                        UserId = t,
+                        Type = "user",
+                    };
+                }));
+                await Context.SaveChangesAsync();
+
+                var totalWorkItems = await Context.WorkItems.CountAsync();
+                return new LoadStatus()
+                {
+                    Id = user.Id,
+                    ScreenName = user.ScreenName,
+                    TotalWorkItems = totalWorkItems,
+                    NeedCollectedCount = needsCollectedIds.Count,
+                    Finished = false,
+                    Stage = 2,
+                };
+            }
+
+            // Stage 3 - Collect user followers
+            var needCollected = followers
+                .Where(t => t.FriendsCollected == null || t.FriendsCollected < past)
+                .Where(t => !string.IsNullOrEmpty(t.ScreenName))
+                .ToList();
 
             if (needCollected.Count > 0)
             {
@@ -89,11 +131,7 @@ namespace FurlandGraph.Controllers
                     };
                 }));
                 await Context.SaveChangesAsync();
-            }
 
-
-            if (needCollected.Count > 0)
-            {
                 var totalWorkItems = await Context.WorkItems.CountAsync();
                 return new LoadStatus()
                 {
@@ -102,10 +140,11 @@ namespace FurlandGraph.Controllers
                     TotalWorkItems = totalWorkItems,
                     NeedCollectedCount = needCollected.Count,
                     Finished = needCollected.Count == 0,
-                    Stage = 2,
+                    Stage = 3,
                 };
             }
 
+            // Stage 4 - calculate friendship graph
             var cacheItem = await Context.GraphCache
                 .Where(t => t.UserId == user.Id && t.Type == "friends")
                 .Select(t => new { t.UserId, t.FinishedAt })
@@ -122,7 +161,7 @@ namespace FurlandGraph.Controllers
 
                 Context.GraphCache.Add(newCacheItem);
                 await Context.SaveChangesAsync();
-                cacheItem = new { UserId = user.Id, FinishedAt = (DateTime?) null };
+                cacheItem = new { UserId = user.Id, FinishedAt = (DateTime?)null };
             }
 
             return new LoadStatus()
@@ -132,7 +171,7 @@ namespace FurlandGraph.Controllers
                 TotalWorkItems = await Context.GraphCache.Where(t => t.FinishedAt == null).CountAsync(),
                 NeedCollectedCount = 0,
                 Finished = cacheItem.FinishedAt.HasValue,
-                Stage = 3,
+                Stage = 4,
             };
         }
 

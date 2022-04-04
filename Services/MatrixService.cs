@@ -56,13 +56,18 @@ namespace FurlandGraph.Services
             var lz4Options = MessagePackSerializerOptions.Standard.WithCompression(MessagePackCompression.Lz4BlockArray);
             var userId = item.UserId;
             var userFriends = await Context.UserFriends
-                .Where(t => t.UserId == userId && t.Friend.Protected == false && t.Friend.Deleted == false)
+                .Where(t => t.UserId == userId && t.Friend.Protected == false && t.Friend.Deleted == false && t.Friend.ScreenName != null)
                 .Select(t => t.FriendId)
                 .ToListAsync(cancellationToken: cancellationToken);
             userFriends.Add(userId);
             userFriends.Sort();
 
             var friends = await Context.Users.Where(t => userFriends.Contains(t.Id)).ToDictionaryAsync(t => t.Id);
+            var mutualList = (await Context.UserFriends
+                .Where(t => userFriends.Contains(t.FriendId) && userFriends.Contains(t.UserId))
+                .ToListAsync())
+                .GroupBy(t => t.UserId)
+                .ToDictionary(k => k.Key, v => v.Select(t => t.FriendId.ToString()).ToList());
 
             var muturalMatrix = await GetMutualMatrix(userFriends, cancellationToken);
 
@@ -77,10 +82,11 @@ namespace FurlandGraph.Services
                     {
                         Id = friend.Id.ToString(),
                         ScreenName = friend.ScreenName,
-                        ProfileImageUrl = friend.ProfileImageUrl,
                         FollowersCount = friend.FollowersCount,
                         FriendsCount = friend.FriendsCount,
                         StatusesCount = friend.StatusesCount,
+                        LastStatus = friend.LastStatus,
+                        Friends = mutualList.ContainsKey(id) ? mutualList[id] : new List<string>(),
                     };
                 }).ToList(),
                 MutualMatrix = muturalMatrix.ToList(),
@@ -103,12 +109,12 @@ crossFriends as (
 mutuals as (
 	select cf.id1, cf.id2, count(*) from crossFriends as cf
 	join ""userFriends"" uf1 on uf1.""userId"" = cf.id1 
-	join ""userFriends"" uf2 on uf2.""userId"" = uf1.""friendId"" and uf2.""friendId"" = cf.id2 
-	group by cf.id1, cf.id2
+	join ""userFriends"" uf2 on uf2.""userId"" = cf.id2 and uf2.""friendId"" = uf1.""friendId""
+  group by cf.id1, cf.id2
 )
 select * from mutuals order by id1 asc,id2 asc;";
 
-            var queryDef = new CommandDefinition(sql, flags: CommandFlags.Buffered, commandTimeout: 300, cancellationToken: cancellationToken);
+            var queryDef = new CommandDefinition(sql, flags: CommandFlags.Buffered, commandTimeout: 600, cancellationToken: cancellationToken);
             var reader = await Context.Database.GetDbConnection().QueryAsync<GraphRow>(queryDef);
 
             // Use ToList to process the list early, since the reader will not last forever

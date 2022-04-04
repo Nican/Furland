@@ -26,8 +26,18 @@
 
         public long StatusesCount { get; set; }
 
+        /// <summary>
+        /// Time of the last tweet
+        /// </summary>
+        public DateTime? LastStatus { get; set; }
+
         public DateTime? FollowersCollected { get; set; }
 
         public DateTime? FriendsCollected { get; set; }
+
+        /// <summary>
+        /// When the user data was last updated
+        /// </summary>
+        public DateTime LastUpdate { get; set; }
     }
 }
