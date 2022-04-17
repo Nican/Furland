@@ -13,9 +13,7 @@ namespace FurlandGraph.Models
 
         public DbSet<User> Users { get; set; }
 
-        public DbSet<UserFriend> UserFriends { get; set; }
-
-        public DbSet<UserFollower> UserFollowers { get; set; }
+        public DbSet<UserRelations> UserRelations { get; set; }
 
         public DbSet<TwitterToken> TwitterTokens { get; set; }
 
@@ -49,25 +47,16 @@ namespace FurlandGraph.Models
                 entity.Property(e => e.LastStatus).HasColumnName("lastStatus");
             });
 
-            modelBuilder.Entity<UserFollower>(entity =>
+            modelBuilder.Entity<UserRelations>(entity =>
             {
-                entity.ToTable("userFollowers");
+                entity.ToTable("userRelations");
                 entity.Property(e => e.UserId).HasColumnName("userId");
-                entity.Property(e => e.FollowerId).HasColumnName("followerId");
+                entity.Property(e => e.Type).HasColumnName("type");
+                entity.Property(e => e.List).HasColumnName("list");
 
-                entity.HasKey(c => new { c.UserId, c.FollowerId });
-            });
-
-            modelBuilder.Entity<UserFriend>(entity =>
-            {
-                entity.ToTable("userFriends");
-                entity.Property(e => e.UserId).HasColumnName("userId");
-                entity.Property(e => e.FriendId).HasColumnName("friendId");
-
-                entity.HasKey(c => new { c.UserId, c.FriendId });
+                entity.HasKey(c => new { c.UserId, c.Type });
 
                 entity.HasOne(e => e.User);
-                entity.HasOne(e => e.Friend);
             });
 
             modelBuilder.Entity<TwitterToken>(entity =>

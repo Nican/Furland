@@ -10,6 +10,8 @@
 		<SpaProxyServerUrl>https://localhost:44417</SpaProxyServerUrl>
 		<SpaProxyLaunchCommand>npm start</SpaProxyLaunchCommand>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<PlatformTarget>AnyCPU</PlatformTarget>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -17,6 +19,7 @@
 		<PackageReference Include="MessagePack" Version="2.3.85" />
 		<PackageReference Include="Microsoft.AspNetCore.Authentication.Twitter" Version="6.0.1" />
 		<PackageReference Include="Microsoft.AspNetCore.SpaProxy" Version="6.0.1" />
+		<PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="6.0.4" />
 		<PackageReference Include="Npgsql" Version="6.0.1" />
 		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="6.0.1" />
 		<PackageReference Include="Simple.Migrations" Version="0.9.21" />

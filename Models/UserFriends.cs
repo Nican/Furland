@@ -1,13 +1,13 @@
 ﻿namespace FurlandGraph.Models
 {
-    public class UserFriend
+    public class UserRelations
     {
         public long UserId { get; set; }
 
-        public long FriendId { get; set; }
+        public string Type { get; set; }
+
+        public List<long> List { get; set; }
 
         public User User;
-
-        public User Friend;
     }
 }

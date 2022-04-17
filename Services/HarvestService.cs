@@ -59,7 +59,11 @@ namespace FurlandGraph.Services
                         }
                         catch (TwitterException ex) when (ex.Message.Contains("Rate limit exceeded (88)"))
                         {
-                            tracker.Token.NextFriendsRequest = DateTime.UtcNow + TimeSpan.FromMinutes(15); // API Key has no calls left
+                            var a = tracker.TwitterClient.RateLimits.GetEndpointRateLimitAsync(ex.URL);
+                            var waitTime = TimeSpan.FromSeconds(ex.TwitterQuery.QueryRateLimit.ResetDateTimeInSeconds + 5);
+
+                            // API Key has no calls left
+                            tracker.Token.NextFriendsRequest = DateTime.UtcNow + waitTime; 
                             await Context.SaveChangesAsync();
                             tracker = null;
                         }
@@ -71,7 +75,8 @@ namespace FurlandGraph.Services
 
                     if (tracker != null && !tracker.CanWork()) // API key has no calls left
                     {
-                        tracker.Token.NextFriendsRequest = DateTime.UtcNow + TimeSpan.FromMinutes(15);
+                        var rateLimit = await tracker.TwitterClient.RateLimits.GetEndpointRateLimitAsync("https://api.twitter.com/1.1/followers/ids.json");
+                        tracker.Token.NextFriendsRequest = DateTime.UtcNow + TimeSpan.FromSeconds(rateLimit.ResetDateTimeInSeconds + 5);
                         await Context.SaveChangesAsync();
                         tracker = null;
                     }
@@ -111,12 +116,19 @@ namespace FurlandGraph.Services
         {
             var twitterConfig = TwitterConfiguration.Value;
 
+            TwitterClient client = null;
+
             if (string.IsNullOrWhiteSpace(token.BearerToken))
             {
-                return new TwitterClient(twitterConfig.ConsumerKey, twitterConfig.ConsumerSecret, token.AccessToken, token.AccessSecret);
+                client = new TwitterClient(twitterConfig.ConsumerKey, twitterConfig.ConsumerSecret, token.AccessToken, token.AccessSecret);
+            }
+            else
+            {
+                client = new TwitterClient(twitterConfig.ConsumerKey, twitterConfig.ConsumerSecret, token.BearerToken);
             }
 
-            return new TwitterClient(twitterConfig.ConsumerKey, twitterConfig.ConsumerSecret, token.BearerToken);
+            client.Config.RateLimitTrackerMode = RateLimitTrackerMode.TrackOnly;
+            return client;
         }
 
         public async Task<TwitterToken> GetNextToken(List<long> activeIds)
@@ -151,9 +163,10 @@ namespace FurlandGraph.Services
 
             if (workItem.Type == "user")
             {
+                IUser friend = null;
                 try
                 {
-                    var friend = await tracker.TwitterClient.Users.GetUserAsync(workItem.UserId);
+                    friend = await tracker.TwitterClient.Users.GetUserAsync(workItem.UserId);
                     // TODO: Do we call the user API too often?
                     await UserService.CollectUser(dbContext, friend);
                 }
@@ -169,6 +182,10 @@ namespace FurlandGraph.Services
                 {
                     await UserService.AddDeletedUser(dbContext, workItem.UserId);
                 }
+                catch (Exception e)
+                {
+                    throw e;
+                }
                 return true;
             }
 
@@ -177,15 +194,32 @@ namespace FurlandGraph.Services
                 return true;
             }
 
-            var iterator = GetIterator(workItem.Type);
-            if (!iterator.UserCanUpdate(dbUser))
+            try
             {
-                dbUser.FriendsCollected = DateTime.UtcNow;
+                var iterator = GetIterator(workItem.Type);
+                if (!iterator.UserCanUpdate(dbUser))
+                {
+                    dbUser.FriendsCollected = DateTime.UtcNow;
+                    await dbContext.SaveChangesAsync();
+                    return true;
+                }
+
+                return await HarvestFollowers(dbContext, iterator, tracker);
+            }
+            catch (TwitterException ex) when (ex.StatusCode == 401 && ex.Content.Contains("Not authorized"))
+            {
+                // User has their account set to private? 
+                dbUser.Protected = true;
                 await dbContext.SaveChangesAsync();
                 return true;
             }
-
-            return await HarvestFollowers(dbContext, iterator, tracker);
+            catch (TwitterException ex) when (ex.StatusCode == 404 && ex.Content.Contains("Sorry, that page does not exist"))
+            {
+                // User has their account set to private? 
+                dbUser.Protected = true;
+                await dbContext.SaveChangesAsync();
+                return true;
+            }
         }
 
         public UserRelationIterator GetIterator(string type)
@@ -259,11 +293,13 @@ namespace FurlandGraph.Services
         {
             var dbUser = await context.Users.FindAsync(userId);
             dbUser.FriendsCollected = DateTime.UtcNow;
-            context.Database.ExecuteSqlInterpolated(@$"DELETE FROM ""userFriends"" WHERE ""userId""={userId}");
-            context.UserFriends.AddRange(relationIds.Distinct().Select(t =>
+            await context.Database.ExecuteSqlInterpolatedAsync(@$"DELETE FROM ""userRelations"" WHERE ""userId""={userId} and ""type""='friends'");
+            context.UserRelations.Add(new UserRelations()
             {
-                return new UserFriend() { UserId = userId, FriendId = t };
-            }));
+                UserId = userId,
+                Type = "friends",
+                List = relationIds.OrderBy(t => t).ToList(),
+            });
         }
 
         public override bool UserCanUpdate(User user)
@@ -292,11 +328,13 @@ namespace FurlandGraph.Services
         {
             var dbUser = await context.Users.FindAsync(userId);
             dbUser.FollowersCollected = DateTime.UtcNow;
-            await context.Database.ExecuteSqlInterpolatedAsync(@$"DELETE FROM ""userFollowers"" WHERE ""userId""={userId}");
-            context.UserFollowers.AddRange(relationIds.Distinct().Select(t =>
+            await context.Database.ExecuteSqlInterpolatedAsync(@$"DELETE FROM ""userRelations"" WHERE ""userId""={userId} and ""type""='followers'");
+            context.UserRelations.Add(new UserRelations()
             {
-                return new UserFollower() { UserId = userId, FollowerId = t };
-            }));
+                UserId = userId,
+                Type = "followers",
+                List = relationIds.OrderBy(t => t).ToList(),
+            });
         }
 
         public override bool UserCanUpdate(User user)
@@ -329,11 +367,6 @@ namespace FurlandGraph.Services
         {
             Interlocked.Decrement(ref CallsLeft);
             Console.WriteLine($"Tracker use call: {CallsLeft}");
-
-            if (CallsLeft <= 1)
-            {
-
-            }
         }
 
         public bool CanWork()

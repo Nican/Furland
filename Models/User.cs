@@ -39,5 +39,10 @@
         /// When the user data was last updated
         /// </summary>
         public DateTime LastUpdate { get; set; }
+
+        public bool CanCollect()
+        {
+            return !Deleted && !Suspended && !Protected;
+        }
     }
 }

@@ -22,7 +22,7 @@ namespace FurlandGraph.Models
         public List<GraphCacheFriendItem> Friends { get; set; }
 
         [Key("mutualMatrix")]
-        public List<long> MutualMatrix { get; set; }
+        public List<int> MutualMatrix { get; set; }
     }
 
     [MessagePackObject]

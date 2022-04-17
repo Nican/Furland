@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -28,6 +29,24 @@ namespace FurlandGraph
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            ThreadPool.SetMinThreads(100, 100);
+
+            services.AddSession(options =>
+            {
+                options.IdleTimeout = TimeSpan.FromDays(60);
+            });
+
+            var redisConnString = Configuration.GetConnectionString("redis");
+
+            if (!string.IsNullOrWhiteSpace(redisConnString))
+            {
+                services.AddStackExchangeRedisCache(options =>
+                {
+                    options.Configuration = redisConnString;
+                    options.InstanceName = "SampleInstance";
+                });
+            }
+
             // services.AddRazorPages();
 
             services.AddResponseCompression(options =>
@@ -52,6 +71,7 @@ namespace FurlandGraph
             });
 
             services.AddSingleton<UserService>();
+            services.AddScoped<StatusService>();
             services.AddScoped<HarvestService>();
             services.AddScoped<MatrixService>();
 
@@ -72,7 +92,7 @@ namespace FurlandGraph
             }
 
             app.UseStaticFiles();
-
+            app.UseSession();
             app.UseRouting();
 
             app.UseEndpoints(endpoints =>

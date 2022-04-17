@@ -161,9 +161,7 @@ export class MovableCanvas extends React.Component<MovableCanvasProps, MovableCa
         const y = transform.y - size.height / 2;
 
         const style: React.CSSProperties = {
-            top: -y + "px",
-            left: -x + "px",
-            transform: "scale(" + transform.scale + ")",
+            transform: `translate(${-x}px, ${-y}px) scale(${transform.scale})`,
             transformOrigin: "0% 0%",
             width: this.props.width + "px",
             height: this.props.height + "px",

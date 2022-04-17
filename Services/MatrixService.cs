@@ -2,6 +2,7 @@ using Dapper;
 using FurlandGraph.Models;
 using MessagePack;
 using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
 
 namespace FurlandGraph.Services
 {
@@ -16,6 +17,8 @@ namespace FurlandGraph.Services
 
     public class MatrixService
     {
+        public static readonly long MaxAccountSize = 50000;
+
         public MatrixService(FurlandContext context)
         {
             Context = context;
@@ -26,6 +29,7 @@ namespace FurlandGraph.Services
         public async Task RunAsync()
         {
             Console.WriteLine("Starting matrix service...");
+
             try
             {
                 while (true)
@@ -55,28 +59,61 @@ namespace FurlandGraph.Services
         {
             var lz4Options = MessagePackSerializerOptions.Standard.WithCompression(MessagePackCompression.Lz4BlockArray);
             var userId = item.UserId;
-            var userFriends = await Context.UserFriends
-                .Where(t => t.UserId == userId && t.Friend.Protected == false && t.Friend.Deleted == false && t.Friend.ScreenName != null)
-                .Select(t => t.FriendId)
-                .ToListAsync(cancellationToken: cancellationToken);
+            string[] types = item.Type.Split('+');
+            string nodes = types[0];
+            string relationship = types[1];
+
+            var userFriends = await Context.UserRelations
+                .Where(t => t.UserId == userId && t.Type == nodes)
+                .Select(t => t.List)
+                .AsNoTracking()
+                .FirstAsync(cancellationToken: cancellationToken);
+
             userFriends.Add(userId);
-            userFriends.Sort();
 
-            var friends = await Context.Users.Where(t => userFriends.Contains(t.Id)).ToDictionaryAsync(t => t.Id);
-            var mutualList = (await Context.UserFriends
-                .Where(t => userFriends.Contains(t.FriendId) && userFriends.Contains(t.UserId))
-                .ToListAsync())
-                .GroupBy(t => t.UserId)
-                .ToDictionary(k => k.Key, v => v.Select(t => t.FriendId.ToString()).ToList());
+            // Remove all users whom's account is not private
+            var users = await Context.Users
+                .Where(t => userFriends.Contains(t.Id) && t.Protected == false && t.Deleted == false && t.ScreenName != null)
+                .OrderBy(t => t.Id)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
 
-            var muturalMatrix = await GetMutualMatrix(userFriends, cancellationToken);
+            if (relationship == "friends")
+            {
+                users = users.Where(t => t.FriendsCount > 1 && t.FriendsCount <= MaxAccountSize).ToList();
+            }
+            else
+            {
+                users = users.Where(t => t.FollowersCount > 1 && t.FollowersCount <= MaxAccountSize).ToList();
+            }
+
+            userFriends = users.Select(t => t.Id).ToList();
+
+            var relationMap = await Context.UserRelations
+                .Where(t => t.Type == relationship && userFriends.Contains(t.UserId))
+                .AsNoTracking()
+                .ToDictionaryAsync(t => t.UserId, cancellationToken);
+
+            // We need to keep the order of userFriends
+            var relations = userFriends.Select(t => relationMap.ContainsKey(t) ? relationMap[t].List.ToArray() : Array.Empty<long>()).ToList();
+
+            Stopwatch watch = new Stopwatch();
+            watch.Start();
+            var muturalMatrix = GetMutualMatrix(relations);
+            Console.WriteLine($"Time to complete: {watch.Elapsed.TotalSeconds} seconds.");
 
             var cacheItem = new GraphCacheItem()
             {
-                Friends = userFriends.Select(id =>
+                Friends = users.Select(friend =>
                 {
-                    // Use a dictornary here since we must preserve order
-                    var friend = friends[id];
+                    var mutuals = new List<string>();
+
+                    if (relationMap.ContainsKey(friend.Id))
+                    {
+                        mutuals = Relation.Merge(relationMap[friend.Id].List, userFriends)
+                            .Select(t => t.ToString())
+                            .ToList();
+                    }
 
                     return new GraphCacheFriendItem()
                     {
@@ -86,10 +123,10 @@ namespace FurlandGraph.Services
                         FriendsCount = friend.FriendsCount,
                         StatusesCount = friend.StatusesCount,
                         LastStatus = friend.LastStatus,
-                        Friends = mutualList.ContainsKey(id) ? mutualList[id] : new List<string>(),
+                        Friends = mutuals,
                     };
                 }).ToList(),
-                MutualMatrix = muturalMatrix.ToList(),
+                MutualMatrix = muturalMatrix,
             };
 
             item.Data = MessagePackSerializer.Serialize(cacheItem, lz4Options, cancellationToken);
@@ -98,61 +135,199 @@ namespace FurlandGraph.Services
 
         }
 
-        private async Task<List<long>> GetMutualMatrix(List<long> userFriends, CancellationToken cancellationToken)
+        private unsafe List<int> GetMutualMatrix(List<long[]> relations)
         {
-            string sql = $@"with friends as (
-	select ""id"" from ""users"" u where u.id IN ({string.Join(",", userFriends)})
-),
-crossFriends as (
-	select f1.id as id1, f2.id as id2 from friends f1 cross join friends f2
-),
-mutuals as (
-	select cf.id1, cf.id2, count(*) from crossFriends as cf
-	join ""userFriends"" uf1 on uf1.""userId"" = cf.id1 
-	join ""userFriends"" uf2 on uf2.""userId"" = cf.id2 and uf2.""friendId"" = uf1.""friendId""
-  group by cf.id1, cf.id2
-)
-select * from mutuals order by id1 asc,id2 asc;";
+            int count = relations.Count;
+            List<int> results = new(count * count + 1);
+            int i = 0;
 
-            var queryDef = new CommandDefinition(sql, flags: CommandFlags.Buffered, commandTimeout: 600, cancellationToken: cancellationToken);
-            var reader = await Context.Database.GetDbConnection().QueryAsync<GraphRow>(queryDef);
-
-            // Use ToList to process the list early, since the reader will not last forever
-            return GetMutualMatrix(userFriends, reader).ToList();
-        }
-
-        private IEnumerable<long> GetMutualMatrix(List<long> userFriends, IEnumerable<GraphRow> result)
-        {
-            var reader = result.GetEnumerator();
-            GraphRow row = null;
-
-            if (reader.MoveNext())
+            foreach (var f1 in relations)
             {
-                row = reader.Current;
+                // Since the matrix is symetrical over the diagonal axis
+                // We can just copy over the values we already computed
+                for(int j = 0; j < i; j++)
+                {
+                    var value = results[j * count + i];
+                    results.Add(value);
+                }
+
+                for (int j = i; j < count; j++)
+                {
+                    var f2 = relations[j];
+                    // This may be called 4,000,000 times for an user with 2,000 friends
+                    results.Add(Relation.MergeCount(f1, f2));
+                }
+
+                //foreach (var f2 in relations)
+                //{
+                //    // This may be called 4,000,000 times for an user with 2,000 friends
+                //    result.Add(Relation.MergeCount(f1, f2));
+                //}
+
+                i++;
             }
 
-            foreach (var f1 in userFriends)
+            return results;
+        }
+    }
+
+    public class Relation
+    {
+        private readonly List<long> list;
+
+        public int position = 0;
+
+        public long Value
+        {
+            get { return list[position]; }
+        }
+
+        public Relation(List<long> list)
+        {
+            this.list = list;
+        }
+
+        public void Advance()
+        {
+            position++;
+        }
+
+        public bool IsPastEnd()
+        {
+            return position >= list.Count - 1;
+        }
+
+        /// <summary>
+        /// Pointer implementation 
+        /// 28 seconds for pointer path
+        /// 34 seconds for safe implementation 
+        /// </summary>
+        /// <param name="leftArray"></param>
+        /// <param name="rightArray"></param>
+        /// <returns></returns>
+        public static unsafe int MergeCount(long[] leftArray, long[] rightArray)
+        {
+            int count = 0;
+
+            if (leftArray.Length == 0 || rightArray.Length == 0)
             {
-                foreach (var f2 in userFriends)
+                return 0;
+            }
+
+            fixed (long* leftPtrStart = leftArray, rightPtrStart = rightArray)
+            {
+                long* leftPtr = leftPtrStart;
+                long* rightPtr = rightPtrStart;
+                long* leftEnd = leftPtr + leftArray.Length;
+                long* rightEnd = rightPtr + rightArray.Length;
+
+                if (leftPtr == rightPtr)
                 {
-                    if (row != null && f1 == row.Id1 && f2 == row.Id2)
+                    return leftArray.Length;
+                }
+
+                while (true)
+                {
+                    while (*leftPtr < *rightPtr)
                     {
-                        yield return row.Count;
-                        if (reader.MoveNext())
-                        {
-                            row = reader.Current;
-                        }
-                        else
-                        {
-                            row = null;
-                        }
+                        leftPtr++;
+                        if (leftPtr >= leftEnd)
+                            return count;
                     }
-                    else
+                    while (*leftPtr > *rightPtr)
                     {
-                        yield return 0;
+                        rightPtr++;
+                        if (rightPtr >= rightEnd)
+                            return count;
+                    }
+                    while (*leftPtr == *rightPtr)
+                    {
+                        count++;
+                        leftPtr++;
+                        rightPtr++;
+                        if (leftPtr >= leftEnd || rightPtr >= rightEnd)
+                            return count;
                     }
                 }
             }
+        }
+
+        public static int MergeCountOld(long[] leftArray, long[] rightArray)
+        {
+            int leftCount = leftArray.Length;
+            int rightCount = rightArray.Length;
+
+            if (leftCount == 0 || rightCount == 0)
+            {
+                return 0;
+            }
+
+            long leftValue = leftArray[0];
+            long rightValue = rightArray[0];
+            int leftPosition = 0;
+            int rightPosition = 0;
+            int count = 0;
+
+            // while (leftPosition < leftCount && rightPosition < rightCount)
+            // TODO: Could this be faster with pointers?
+            while (true)
+            {
+                if (leftValue == rightValue)
+                {
+                    count++;
+                    leftPosition++;
+                    rightPosition++;
+
+                    if (leftPosition >= leftCount || rightPosition >= rightCount)
+                        break;
+
+                    leftValue = leftArray[leftPosition];
+                    rightValue = rightArray[rightPosition];
+                }
+                else if (leftValue < rightValue)
+                {
+                    leftPosition++;
+                    if (leftPosition >= leftCount)
+                        break;
+
+                    leftValue = leftArray[leftPosition];
+                }
+                else
+                {
+                    rightPosition++;
+                    if (rightPosition >= rightCount)
+                        break;
+
+                    rightValue = rightArray[rightPosition];
+                }
+            }
+
+            return count;
+        }
+
+        public static List<long> Merge(List<long> leftList, List<long> rightList)
+        {
+            Relation left = new Relation(leftList);
+            Relation right = new Relation(rightList);
+            List<long> output = new();
+            while (!left.IsPastEnd() && !right.IsPastEnd())
+            {
+                if (left.Value == right.Value)
+                {
+                    output.Add(left.Value);
+                    left.Advance();
+                    right.Advance();
+                }
+                else if (left.Value < right.Value)
+                {
+                    left.Advance();
+                }
+                else
+                {
+                    right.Advance();
+                }
+            }
+            return output;
         }
     }
 }

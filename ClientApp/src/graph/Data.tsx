@@ -30,6 +30,10 @@ export class TwitterData {
         console.log(data);
     }
 
+    public getFriend(id: number): TwitterUserData {
+        return this.data.friends[id];
+    }
+
     public friendCount(id1: number, id2: number): number {
         return this.data.mutualMatrix[id1 * this.nodeCount + id2];
     }

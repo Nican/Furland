@@ -104,6 +104,8 @@ namespace FurlandGraph.Controllers
             await UserService.CollectUser(Context, user);
             await Context.SaveChangesAsync();
 
+            HttpContext.Session.SetString("userId", user.IdStr);
+
             return new
             {
                 Id = user.Id,

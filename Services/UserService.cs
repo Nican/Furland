@@ -22,7 +22,8 @@ namespace FurlandGraph.Services
             {
                 dbUser = new User()
                 {
-                    Id = userId
+                    Id = userId,
+                    Name = "",
                 };
                 dbContext.Users.Add(dbUser);
             }
