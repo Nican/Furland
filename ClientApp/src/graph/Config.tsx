@@ -1,5 +1,5 @@
 export interface Config {
-  data: DataConfig;
+  // data: DataConfig;
   graph: GraphConfig;
   edge: EdgeConfig;
 }
@@ -19,6 +19,7 @@ export interface GraphConfig {
   scalingRatio: number;
   edgeWeightInfluence: number;
   linLogMode: boolean;
+  images: boolean;
   // reset(): void;
 }
 
@@ -27,4 +28,7 @@ export interface EdgeConfig {
   topN: number;
   mutualsOnly: boolean;
   edgeWeights: string;
+  maxFriendRank: number;
+  maxFriendRatio: number;
+  resolution: number;
 }

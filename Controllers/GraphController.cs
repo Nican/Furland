@@ -21,15 +21,17 @@ namespace FurlandGraph.Controllers
 
         [HttpGet]
         [Route("user/{username}/status")]
-        public async Task<LoadStatus> GetUserStatus(string username, string nodes = "friends", string relationship = "friends")
+        public async Task<LoadStatus> GetUserStatus(string username, long userId, string nodes = "friends", string relationship = "friends")
         {
-            long? userId = null;
-            var userIdStr = HttpContext.Session.GetString("userId");
+            //long? userId = null;
+            //var userIdStr = HttpContext.Session.GetString("userId");
 
-            if (long.TryParse(userIdStr, out var userIdParsed))
-            {
-                userId = userIdParsed;
-            }
+            //if (long.TryParse(userIdStr, out var userIdParsed))
+            //{
+            //    userId = userIdParsed;
+            //}
+
+            long? requesterId = userId == 0 ? null : userId;
 
             if (nodes != "friends" && nodes != "followers")
             {
@@ -43,9 +45,9 @@ namespace FurlandGraph.Controllers
 
             try
             {
-                return await StatusService.CheckStatus(username, nodes, relationship, userId);
+                return await StatusService.CheckStatus(username, nodes, relationship, requesterId);
             }
-            catch (TooManyNodesExepction e)
+            catch (StatusServiceException e)
             {
                 return new LoadStatus()
                 {
@@ -76,6 +78,7 @@ namespace FurlandGraph.Controllers
             }
 
             var cacheData = MessagePackSerializer.Deserialize<GraphCacheItem>(cache.Data, lz4Options);
+            Response.Headers["cache-control"] = "max-age=604800";
             return new FileContentResult(MessagePackSerializer.Serialize(cacheData), "application/json")
             {
                 FileDownloadName = $"userdata.msgpack",

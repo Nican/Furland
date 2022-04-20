@@ -1,13 +1,15 @@
-﻿import React, { Component, MutableRefObject, RefObject } from 'react';
+﻿import React, { Component, MutableRefObject, useEffect, useState } from 'react';
 import Graph from 'graphology';
 import FA2Layout from 'graphology-layout-forceatlas2/worker';
-import { MovableCanvas, Transform } from '../MovableCanvas';
+import { MovableCanvas } from '../MovableCanvas';
 
 import { InputData, TwitterData, TwitterUserData } from './Data';
 import { Config } from './Config';
 import { UserNodeDetails } from './SideBar';
-import { button, useControls } from 'leva';
-import { BasicEdges, TopNEdges } from './Edge';
+import { button, buttonGroup, useControls } from 'leva';
+import { BasicEdges, HeapOrderedEdges, TopNEdges } from './Edge';
+import { saveAsPng } from './Png';
+import louvain from 'graphology-communities-louvain';
 
 let screenSize = 12000;
 let nodeRadius = 16;
@@ -15,7 +17,6 @@ let nodeRadius = 16;
 interface TwitterGraphProps {
   screenName: string;
   inputData: InputData;
-  config: Config;
 }
 
 interface TwitterGraphState {
@@ -23,76 +24,143 @@ interface TwitterGraphState {
   hover?: number;
 }
 
+interface StatsDetail {
+  nodes: number;
+  edges: number;
+}
+
 export const TwitterGraphWithConfig: React.FC<TwitterGraphProps> = props => {
 
   const resetRef = React.useRef<() => void>();
+  const saveAsPngRef = React.useRef<() => void>();
+  const [stats, setStats] = useState<StatsDetail>({ nodes: 0, edges: 0 });
+  const [params] = useState(() => new URLSearchParams(window.location.search));
 
-  const { slowDown, linLogMode, scalingRatio } = useControls('Graph', {
+  /*
+    preset: {
+      value: 1,
+      render: () => false,
+    },
+    presetsBtn: {
+      ...buttonGroup({
+        label: 'Presets',
+        opts: {
+          '1': () => set({ 'preset': 1 }),
+          '2': () => set({ 'preset': 2 }),
+          '3': () => set({ 'preset': 3 }),
+        },
+      }),
+      render: () => false,
+    },
+  */
+
+  const [{ slowDown, mutualsOnly, topN, maxFriendRank, images, maxFriendRatio, resolution }, set] = useControls('Graph', (): any => ({
     totalNodes: {
-      value: `${props.inputData.friends.length}`,
+      value: ``,
       editable: false,
     },
+    speedBtn: buttonGroup({
+      label: 'Speed',
+      opts: {
+        '0x': () => set({ 'slowDown': -1 }),
+        '1x': () => set({ 'slowDown': 100 }),
+        '2x': () => set({ 'slowDown': 50 }),
+        '4x': () => set({ 'slowDown': 20 }),
+        '8x': () => set({ 'slowDown': 5 }),
+      },
+      render: () => true,
+    }),
     slowDown: {
-      value: 100,
+      value: 50,
       min: 0,
-      max: 200,
+      max: 100,
+      render: () => false,
     },
-    scalingRatio: {
+    images: true,
+    resolution: {
       value: 10,
       min: 1,
-      max: 30,
+      max: 20,
+      render: (get: any) => get('Graph.images') === false,
     },
-    linLogMode: false,
+    mutualsOnly: params.get('mutualsOnly') === 'true',
+    topN: {
+      value: parseInt(params.get('topN') || '20', 10) || 20,
+      min: 1,
+      max: 100,
+    },
+    maxFriendRank: {
+      value: parseInt(params.get('maxFriendRank') || '20', 10) || 20,
+      min: 1,
+      max: 100,
+    },
+    maxFriendRatio: {
+      value: 0,
+      min: 0,
+      max: 100,
+    },
     reset: button(() => {
       if (resetRef.current) {
         resetRef.current();
       }
     }),
-  });
+    save: {
+      label: 'Save as PNG',
+      ...button(() => {
+        if (saveAsPngRef.current) {
+          saveAsPngRef.current();
+        }
+      })
+    },
+  }));
 
-  const { edgeAlgorithm, weighted, mutualsOnly, topN, edgeWeights } = useControls('Edge', {
-    weighted: false,
-    edgeAlgorithm: {
-      value: 'TopN',
-      options: ['Basic', 'TopN'],
-    },
-    mutualsOnly: false,
-    topN: {
-      value: 20,
-      min: 1,
-      max: 100,
-      render: get => get('Edge.edgeAlgorithm') === 'TopN',
-    },
-    edgeWeights: {
-      value: 'ratio',
-      options: ['linear', 'ratio'],
-      render: get => get('Edge.weighted'),
-    },
-  });
+  useEffect(() => {
+    set({ totalNodes: `Nodes: ${stats.nodes}\nEdges: ${stats.edges}` });
+  }, [stats.nodes, stats.edges]);
+
+  useEffect(() => {
+    const newParams = new URLSearchParams(window.location.search);
+    newParams.set('topN', topN);
+    newParams.set('maxFriendRank', maxFriendRank);
+    newParams.set('mutualsOnly', mutualsOnly);
+
+    window.history.pushState(undefined, '', window.location.pathname + '?' + newParams.toString());
+  }, [topN, maxFriendRank, mutualsOnly]);
 
   const config: Config = {
-    ...props.config,
     graph: {
-      ...props.config.graph,
-      scalingRatio,
-      weighted,
+      adjustSizes: true,
+      barnesHutOptimize: false,
+      strongGravityMode: true,
+      gravity: 0.1,
+      edgeWeightInfluence: 1,
+      scalingRatio: 10,
+      weighted: false,
       slowDown,
-      linLogMode,
+      linLogMode: false,
+      images,
     },
     edge: {
-      ...props.config.edge,
-      edgeAlgorithm,
-      edgeWeights,
+      edgeAlgorithm: 'HeapOrder',
+      edgeWeights: 'none',
       mutualsOnly,
+      maxFriendRank,
       topN,
+      maxFriendRatio,
+      resolution,
     },
   };
 
-  return <TwitterGraph {...props} config={config} reset={resetRef} />
+  return <TwitterGraph {...props} config={config} reset={resetRef} saveAsPng={saveAsPngRef} setStats={setStats} />
 };
 
-interface TwitterGraphPropsInner extends TwitterGraphProps {
+interface TwitterGraphPropsInner {
   reset: MutableRefObject<(() => void) | undefined>;
+  saveAsPng: MutableRefObject<(() => void) | undefined>;
+  config: Config;
+  screenName: string;
+  inputData: InputData;
+  setStats(stats: StatsDetail): void;
 }
 
 export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraphState> {
@@ -119,10 +187,12 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
     this.graph.on('eachNodeAttributesUpdated', this.onEachNodeAttributesUpdated.bind(this));
 
     props.reset.current = this.reset.bind(this);
+    props.saveAsPng.current = this.saveAsPng.bind(this);
 
     this.data.followerData.forEach((item, idx) => {
       const ref = React.createRef();
-      let size = Math.sqrt(Math.min(item.friendsCount, 10000)) / Math.sqrt(10000) * nodeRadius * 2 + nodeRadius;
+      const maxSize = Math.max(item.followersCount, item.followersCount);
+      let size = Math.sqrt(Math.min(maxSize, 10000)) / Math.sqrt(10000) * nodeRadius * 2 + nodeRadius;
       let x = (Math.random() - 0.5) * screenSize;
       let y = (Math.random() - 0.5) * screenSize;
       let fixed = false;
@@ -163,7 +233,7 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
     if (idx && edgeRef) {
       const lines: any[] = [];
 
-      this.graph.forEachUndirectedNeighbor(idx, (neighbor, attr) => {
+      this.graph.forEachNeighbor(idx, (neighbor, attr) => {
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'polygon') as SVGPolygonElement;
         // line.setAttribute('stroke', 'white');
         // line.setAttribute('strokeWidth', '0');
@@ -175,13 +245,19 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
 
       this.graph.setNodeAttribute(idx, 'edgeElements', lines);
     }
+
+    this.renderEdges();
+  }
+
+  public override componentDidMount() {
+    this.clearupNodes();
   }
 
   public override componentWillUnmount() {
     this.layout?.kill();
   }
 
-  public override componentDidUpdate(prevProps: TwitterGraphProps, prevState: TwitterGraphState) {
+  public override componentDidUpdate(prevProps: TwitterGraphPropsInner) {
     if (JSON.stringify(prevProps.config.graph) !== JSON.stringify(this.props.config.graph)) {
       this.setupForceAtlas();
     }
@@ -189,6 +265,10 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
     if (JSON.stringify(prevProps.config.edge) !== JSON.stringify(this.props.config.edge)) {
       this.setupEdges();
     }
+  }
+
+  saveAsPng() {
+    saveAsPng(this.graph, this.props.screenName);
   }
 
   reset() {
@@ -206,19 +286,18 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
 
   onEachNodeAttributesUpdated() {
     this.updateId++;
-    const count = Math.ceil(this.graph.nodes().length / 1000);
-    const id = this.updateId % count;
-
     this.graph.forEachNode((_idx, attr) => {
-      if (attr.id % count === id) {
-        const ref = attr.ref.current;
-        if (ref) {
-          ref.setAttribute('cx', attr.x);
-          ref.setAttribute('cy', attr.y);
-        }
+      const ref = attr.ref.current;
+      if (ref) {
+        ref.setAttribute('cx', attr.x);
+        ref.setAttribute('cy', attr.y);
       }
     });
 
+    this.renderEdges();
+  }
+
+  renderEdges() {
     if (this.state.hover && this.edgeRef.current) {
       const x = this.graph.getNodeAttribute(this.state.hover, 'x');
       const y = this.graph.getNodeAttribute(this.state.hover, 'y');
@@ -242,46 +321,110 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
   }
 
   setupEdges() {
+    const { graph } = this;
     this.layout?.kill();
-    this.graph.clearEdges();
+    graph.clearEdges();
     const edgeConfig = this.props.config.edge;
 
     if (edgeConfig.edgeAlgorithm === 'Basic') {
       var calculator = new BasicEdges(this.data, edgeConfig);
-      calculator.updateGraph(this.graph);
+      calculator.updateGraph(graph);
     }
-
-    if (edgeConfig.edgeAlgorithm === 'TopN') {
+    else if (edgeConfig.edgeAlgorithm === 'TopN') {
       var calculator = new TopNEdges(this.data, edgeConfig);
-      calculator.updateGraph(this.graph);
+      calculator.updateGraph(graph);
+    }
+    else if (edgeConfig.edgeAlgorithm === 'HeapOrder') {
+      var calculator = new HeapOrderedEdges(this.data, edgeConfig);
+      calculator.updateGraph(graph);
     }
 
+    // const communities = louvain(graph);
+    // console.log('communities', communities);
+    louvain.assign(graph, {
+      resolution: edgeConfig.resolution / 10,
+    });
+
+    this.graph.forEachNode((_idx, attr) => {
+      console.log(attr);
+    });
+
+    this.clearupNodes();
     this.setupForceAtlas();
+  }
+
+  clearupNodes() {
+    const { graph, props: { config } } = this;
+    let nodes = 0;
+    let maxCommunity = 1;
+
+    this.graph.forEachNode((_idx, attr) => {
+      if (!attr.fixed) {
+        maxCommunity = Math.max(maxCommunity, attr.community);
+      }
+    });
+
+    // Hide all nodes with 0 edges
+    graph.updateEachNodeAttributes(
+      function (node, attr) {
+        const empty = graph.degree(node) === 0;
+
+        if (attr.fixed !== empty) {
+          attr.fixed = empty;
+          attr.x = (Math.random() - 0.5) * screenSize;
+          attr.y = (Math.random() - 0.5) * screenSize;
+        }
+
+        if (!empty) {
+          nodes++;
+        }
+
+        const ref = attr.ref.current;
+        if (ref) {
+          const color = config.graph.images ? `url(#profileImage${attr.id})` : `hsl(${attr.community / maxCommunity * 360}, 100%, 50%)`;
+          ref.style.display = empty ? 'none' : null;
+          ref.setAttribute('fill', config.graph.images ? `url(#profileImage${attr.id})` : color);
+        }
+        return attr;
+      },
+      { attributes: ['fixed', 'x', 'y'] }
+    );
+
+    this.props.setStats({
+      edges: graph.size,
+      nodes,
+    })
   }
 
   setupForceAtlas() {
     if (this.layout) {
       this.layout.kill();
+      this.layout = undefined;
     }
 
     const graphConfig = this.props.config.graph;
-    this.layout = new FA2Layout(this.graph, {
-      settings: {
-        gravity: graphConfig.gravity,
-        edgeWeightInfluence: graphConfig.edgeWeightInfluence,
-        weight: 'weight',
-        weighted: graphConfig.weighted,
-        barnesHutOptimize: graphConfig.barnesHutOptimize,
-        strongGravityMode: graphConfig.strongGravityMode,
-        scalingRatio: graphConfig.scalingRatio,
-        slowDown: graphConfig.slowDown,
-        linLogMode: graphConfig.linLogMode,
-      } as any,
-      weighted: graphConfig.weighted,
-    });
 
-    // To start the layout
-    this.layout.start();
+    if (graphConfig.slowDown > 0) {
+      this.layout = new FA2Layout(this.graph, {
+        settings: {
+          gravity: graphConfig.gravity,
+          edgeWeightInfluence: graphConfig.edgeWeightInfluence,
+          weight: 'weight',
+          weighted: graphConfig.weighted,
+          barnesHutOptimize: graphConfig.barnesHutOptimize,
+          strongGravityMode: graphConfig.strongGravityMode,
+          scalingRatio: graphConfig.scalingRatio,
+          slowDown: graphConfig.slowDown,
+          linLogMode: graphConfig.linLogMode,
+        } as any,
+        weighted: graphConfig.weighted,
+      });
+
+      // To start the layout
+      this.layout.start();
+    }
+
+    this.clearupNodes();
   }
 
   render() {
@@ -295,11 +438,13 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
     return <>
       <div style={{ position: 'absolute', left: '0px', width: '200px', top: '0px', bottom: '0px', overflow: 'auto' }}>
         {this.state.selectedNode && (<UserNodeDetails
+          graph={this.graph}
           selected={this.state.selectedNode}
           followerData={followerData}
           slice={data.friendSlice(this.state.selectedNode)}
           data={data}
           mutualOnly={this.props.config.edge.mutualsOnly}
+          mouseEnter={this.mouseEnter}
         />)}
       </div>
       <div style={{ position: 'absolute', left: '200px', right: '0px', top: '0px', bottom: '0px', overflow: 'hidden' }}>
@@ -384,7 +529,7 @@ class SVGProfilePics extends Component<SVGProfilePicsProps>  {
 
           return <pattern key={idx} id={`profileImage${idx}`} x="0%" y="0%" height="100%" width="100%"
             viewBox="0 0 48 48">
-            <image x="0%" y="0%" width="48" height="48" xlinkHref={`/api/twitter/${item.id}/picture`}></image>
+            <image x="0%" y="0%" width="48" height="48" xlinkHref={`/api/twitter/${item.id}/picture`} id={`twitterImage${idx}`} />
           </pattern>;
         })
       }

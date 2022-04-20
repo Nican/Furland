@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@msgpack/msgpack": "^2.7.1",
+    "@types/heap": "^0.2.30",
     "@types/jest": "^27.4.1",
     "@types/node": "^17.0.23",
     "@types/react": "^17.0.43",
@@ -11,7 +12,9 @@
     "@types/react-router-dom": "^5.3.3",
     "bootstrap": "^5.1.0",
     "graphology": "^0.23.2",
+    "graphology-communities-louvain": "^2.0.0",
     "graphology-layout-forceatlas2": "^0.8.1",
+    "heap": "^0.2.7",
     "http-proxy-middleware": "^0.19.1",
     "jquery": "^3.5.1",
     "leva": "^0.9.23",

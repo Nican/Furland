@@ -14,7 +14,7 @@ export default class App extends Component {
         return <div style={{ position: 'absolute', left: '0px', right: '0px', top: '0px', bottom: '0px' }}>
             <div style={{ position: 'absolute', left: '0px', right: '0px', top: '0px', height: '50px', overflow: 'hidden', backgroundColor: "#333" }}>
                 <LoginTwitterButton />
-                For support: <a href="https://twitter.com/Nican">@Nican</a>
+                For support: <a href="https://twitter.com/Nican/status/1515778156950552576">@Nican</a>
             </div>
             <div style={{ position: 'absolute', left: '0px', right: '0px', top: '50px', bottom: '0px', overflow: 'auto' }}>
                 <Switch>
@@ -39,6 +39,7 @@ const TwitterLogin = () => {
         const json = await response.json();
 
         setLoginResponse(json);
+        localStorage.setItem('userId', json.id);
     }, []);
 
     if (loginResponse) {

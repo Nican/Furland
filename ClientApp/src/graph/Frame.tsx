@@ -1,55 +1,30 @@
 import { decode } from '@msgpack/msgpack';
-import { useControls } from 'leva';
+import { useControls, useCreateStore, useStoreContext } from 'leva';
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Config, DataConfig } from './Config';
 import { InputData } from './Data';
 import { TwitterGraphWithConfig } from './TwitterGraph';
 
-const defaultConfig: Config = {
-  data: {
-    nodes: 'followers',
-    relationship: 'followers',
-  },
-  edge: {
-    edgeAlgorithm: 'TopN',
-    topN: 20,
-    mutualsOnly: true,
-    edgeWeights: 'linear',
-  },
-  graph: {
-    adjustSizes: true,
-    barnesHutOptimize: false,
-    strongGravityMode: true,
-    weighted: false,
-    gravity: 0.1,
-    slowDown: 100,
-    scalingRatio: 10,
-    edgeWeightInfluence: 1,
-    linLogMode: false,
-    // reset: () => this.reset(),
-  },
-};
-
 export const GraphFrame = () => {
   const [params] = useState(() => new URLSearchParams(window.location.search));
   let { screenName } = useParams<{ screenName: string }>();
 
-  const { nodes, relationship } = useControls({
+  const [{ nodes, relationship }, set] = useControls((): any => ({
     nodes: {
       value: params.get('nodes') || 'friends',
       options: ['followers', 'friends'],
     },
     relationship: {
-      value: params.get('relationship') || 'friends',
+      value: params.get('relationship') || 'followers',
       options: ['followers', 'friends'],
     },
-  });
+  }));
 
   const config = { nodes, relationship };
 
   useEffect(() => {
-    const newParams = new URLSearchParams();
+    const newParams = new URLSearchParams(window.location.search);
     newParams.set('nodes', nodes);
     newParams.set('relationship', relationship);
 
@@ -62,8 +37,12 @@ export const GraphFrame = () => {
   </div>;
 }
 
+interface GraphStateMachineProps {
+  screenName: string;
+  config: DataConfig;
+}
 
-export const GraphStateMachine: React.FC<{ screenName: string; config: DataConfig }> = props => {
+export const GraphStateMachine: React.FC<GraphStateMachineProps> = props => {
   const { config, screenName } = props;
   let [userLoadData, setUserLoadData] = useState<LoadStatus | undefined>();
   let [graphData, setGraphData] = useState<InputData | undefined>();
@@ -95,7 +74,7 @@ export const GraphStateMachine: React.FC<{ screenName: string; config: DataConfi
   }
 
   console.log('graphData', graphData);
-  return <TwitterGraphWithConfig inputData={graphData} screenName={screenName} config={defaultConfig} />;
+  return <TwitterGraphWithConfig inputData={graphData} screenName={screenName} />;
 };
 
 interface LoadGraphDataProps {
@@ -150,21 +129,27 @@ const UserLoadDataComponent: React.FC<UserLoadDataComponentProps> = props => {
   const { screenName, userLoadData, setUserLoadData, config } = props;
   let [timeoutHandle, setTimeoutHandle] = useState<NodeJS.Timeout>();
   let [attempt, setAttempt] = useState(0);
+  let [failed, setFailed] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
+      try {
+        const userId = localStorage.getItem('userId') || 0;
 
-      const response = await fetch(`/api/graph/user/${screenName}/status?nodes=${config.nodes}&relationship=${config.relationship}`);
-      const json = await response.json();
-      setUserLoadData(json);
+        const response = await fetch(`/api/graph/user/${screenName}/status?nodes=${config.nodes}&relationship=${config.relationship}&userId=${userId}`);
+        const json = await response.json();
+        setUserLoadData(json);
 
-      if (!json.finished && !json.error) {
-        console.log('Set timeout');
-        const handle = setTimeout(() => {
-          setAttempt(attempt + 1);
-          console.log(`Finish timeout ${attempt + 1}`);
-        }, 5000);
-        setTimeoutHandle(handle);
+        if (!json.finished && !json.error) {
+          console.log('Set timeout');
+          const handle = setTimeout(() => {
+            setAttempt(attempt + 1);
+            console.log(`Finish timeout ${attempt + 1}`);
+          }, 5000);
+          setTimeoutHandle(handle);
+        }
+      } catch (e) {
+        setFailed(true);
       }
     }
 
@@ -177,8 +162,20 @@ const UserLoadDataComponent: React.FC<UserLoadDataComponentProps> = props => {
     };
   }, [screenName, setUserLoadData, attempt]);
 
+  if (failed) {
+    return <div style={{ color: 'red' }}>
+      Request has failed. Please reload the page.
+    </div>;
+  }
+
   if (!userLoadData) {
     return <div>Loading...</div>;
+  }
+
+  if (userLoadData.error) {
+    return <div style={{ textAlign: 'center' }}>
+      <div>Error: {userLoadData.error}.</div>
+    </div>;
   }
 
   if (!userLoadData.requesterId) {
@@ -188,16 +185,10 @@ const UserLoadDataComponent: React.FC<UserLoadDataComponentProps> = props => {
     </div>;
   }
 
-  if (userLoadData.error) {
-    return <div style={{ textAlign: 'center' }}>
-      <div>Can not load the user.</div>
-      <div>{userLoadData.error}.</div>
-    </div>;
-  }
-
   return <div style={{ textAlign: 'center' }}>
     <div>Downloading follower data for {screenName}...</div>
     <div>Work items left: {userLoadData.needCollectedCount}. (Total work items in queue: {userLoadData.totalWorkItems})</div>
+    <div>Twitter only gives out tokens every 15 minutes. The collection process can be pretty slow, please leave the tab open.</div>
     <StageDetails screenName={screenName} stage={userLoadData.stage} />
   </div>;
 }

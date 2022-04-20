@@ -41,6 +41,11 @@ namespace FurlandGraph.Services
                 user = await LoadUserProfile(username);
             }
 
+            if(user.Protected)
+            {
+                throw new AccountIsProtectedException();
+            }
+
             if (nodes == "friends" && user.FriendsCount > 10000)
             {
                 throw new TooManyNodesExepction("Can not render more than 10,000 nodes.");
@@ -159,7 +164,7 @@ namespace FurlandGraph.Services
                     .Select(t => t.UserId)
                     .ToListAsync();
 
-                    Context.WorkItems.AddRange(needUserCollect.Take(300).Except(doNotAdd).Select(t =>
+                    Context.WorkItems.AddRange(needUserCollect.Take(2000).Except(doNotAdd).Select(t =>
                     {
                         return new WorkItem()
                         {
@@ -225,7 +230,7 @@ namespace FurlandGraph.Services
                         .Select(t => t.UserId)
                         .ToListAsync();
 
-                    Context.WorkItems.AddRange(needCollected.Take(300).Where(t => !doNotAdd.Contains(t.Id)).Select(t =>
+                    Context.WorkItems.AddRange(needCollected.Take(2000).Where(t => !doNotAdd.Contains(t.Id)).Select(t =>
                     {
                         return new WorkItem()
                         {
@@ -291,7 +296,23 @@ namespace FurlandGraph.Services
         }
     }
 
-    public class TooManyNodesExepction : Exception
+    public class StatusServiceException : Exception
+    {
+        public StatusServiceException(string error) : base(error)
+        {
+
+        }
+    }
+
+    public class AccountIsProtectedException : StatusServiceException
+    {
+        public AccountIsProtectedException() : base("Account is protected or deleted")
+        {
+
+        }
+    }
+
+    public class TooManyNodesExepction : StatusServiceException
     {
         public TooManyNodesExepction(string error) : base(error)
         {

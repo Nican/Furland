@@ -67,16 +67,31 @@ namespace FurlandGraph.Services
                             await Context.SaveChangesAsync();
                             tracker = null;
                         }
+                        catch (TwitterException ex) when (ex.Message.Contains("Invalid or expired token"))
+                        {
+                            Context.TwitterTokens.Remove(tracker.Token);
+                            await Context.SaveChangesAsync();
+                            tracker = null;
+                        }                        
                         catch (Exception ex)
                         {
+                            Console.WriteLine(ex.GetType().FullName);
                             Console.WriteLine(ex.ToString());
+                            Console.WriteLine(ex.StackTrace);
                         }
                     }
 
                     if (tracker != null && !tracker.CanWork()) // API key has no calls left
                     {
                         var rateLimit = await tracker.TwitterClient.RateLimits.GetEndpointRateLimitAsync("https://api.twitter.com/1.1/followers/ids.json");
-                        tracker.Token.NextFriendsRequest = DateTime.UtcNow + TimeSpan.FromSeconds(rateLimit.ResetDateTimeInSeconds + 5);
+                        var nextRequest = TimeSpan.FromMinutes(15);
+
+                        if(rateLimit != null)
+                        {
+                            nextRequest = TimeSpan.FromSeconds(rateLimit.ResetDateTimeInSeconds + 5);
+                        }
+
+                        tracker.Token.NextFriendsRequest = DateTime.UtcNow + nextRequest;
                         await Context.SaveChangesAsync();
                         tracker = null;
                     }
@@ -193,7 +208,6 @@ namespace FurlandGraph.Services
             {
                 return true;
             }
-
             try
             {
                 var iterator = GetIterator(workItem.Type);
@@ -205,6 +219,13 @@ namespace FurlandGraph.Services
                 }
 
                 return await HarvestFollowers(dbContext, iterator, tracker);
+            }
+            catch (TwitterException ex) when (ex.StatusCode == 401 && ex.Content.Contains("Unauthorized"))
+            {
+                // User has their account set to private? 
+                dbUser.Protected = true;
+                await dbContext.SaveChangesAsync();
+                return true;
             }
             catch (TwitterException ex) when (ex.StatusCode == 401 && ex.Content.Contains("Not authorized"))
             {

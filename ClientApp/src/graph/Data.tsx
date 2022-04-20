@@ -3,6 +3,7 @@ export interface TwitterUserData {
     id: string;
     screenName: string;
     friendsCount: number;
+    followersCount: number;
     friends: Set<string>;
 }
 
@@ -19,15 +20,13 @@ export class TwitterData {
         return this.data.friends;
     }
 
-    constructor(private data: InputData) {
+    constructor(public data: InputData) {
 
         this.nodeCount = Math.sqrt(this.data.mutualMatrix.length);
 
         for (const friend of data.friends) {
             friend.friends = new Set(friend.friends);
         }
-
-        console.log(data);
     }
 
     public getFriend(id: number): TwitterUserData {

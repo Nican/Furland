@@ -158,12 +158,6 @@ namespace FurlandGraph.Services
                     results.Add(Relation.MergeCount(f1, f2));
                 }
 
-                //foreach (var f2 in relations)
-                //{
-                //    // This may be called 4,000,000 times for an user with 2,000 friends
-                //    result.Add(Relation.MergeCount(f1, f2));
-                //}
-
                 i++;
             }
 
