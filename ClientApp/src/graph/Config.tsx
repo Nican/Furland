@@ -20,6 +20,7 @@ export interface GraphConfig {
   edgeWeightInfluence: number;
   linLogMode: boolean;
   images: boolean;
+  stroke: boolean;
   // reset(): void;
 }
 

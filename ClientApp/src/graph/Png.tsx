@@ -2,7 +2,7 @@ import Graph from "graphology";
 
 
 
-export function saveAsPng(graph: Graph, screenName: string) {
+export function saveAsPng(graph: Graph, screenName: string, stroke: boolean) {
   let minX = 1000;
   let minY = 1000;
   let maxX = -1000;
@@ -24,29 +24,39 @@ export function saveAsPng(graph: Graph, screenName: string) {
 
   context.fillStyle = "black";
   context.fillRect(0, 0, canvas.width, canvas.height);
+  context.lineWidth = 2; // For the stroke
 
   graph.forEachNode((_idx, attr) => {
     if (attr.fixed) {
       return;
     }
+
+    context.save();
     try {
       const x = attr.x - minX;
       const y = attr.y - minY;
       const size = attr.size;
       const img = document.getElementById(`twitterImage${attr.id}`) as any as SVGImageElement;
-      context.save();
+
 
       context.translate(x, y);
       context.beginPath();
       context.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2, true);
       context.closePath();
+
+      if (stroke) {
+        context.strokeStyle = attr.color;
+        context.stroke();
+      }
+
       context.clip();
-
-      context.drawImage(img, 0, 0, size, size);
-      context.restore();
+      if (img) {
+        context.drawImage(img, 0, 0, size, size);
+      }
     } catch (_e) {
-
+      console.log('error: ', _e);
     }
+    context.restore();
   });
 
   const downloadLink = document.createElement('a');

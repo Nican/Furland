@@ -64,7 +64,7 @@ namespace FurlandGraph.Controllers
             var user = await Context.Users.FirstOrDefaultAsync(t => t.ScreenName == screenName);
             if (user == null)
             {
-                throw new Exception();
+                throw new Exception("Could not find: " + screenName);
             }
 
             var workItemName = $"{nodes}+{relationship}";
@@ -78,7 +78,7 @@ namespace FurlandGraph.Controllers
             }
 
             var cacheData = MessagePackSerializer.Deserialize<GraphCacheItem>(cache.Data, lz4Options);
-            Response.Headers["cache-control"] = "max-age=604800";
+            Response.Headers["cache-control"] = "public, max-age=604800";
             return new FileContentResult(MessagePackSerializer.Serialize(cacheData), "application/json")
             {
                 FileDownloadName = $"userdata.msgpack",

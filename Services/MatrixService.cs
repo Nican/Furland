@@ -36,7 +36,7 @@ namespace FurlandGraph.Services
                 {
                     var item = await this.Context.GraphCache
                         .Where(t => t.Data == null)
-                        .OrderByDescending(t => t.CreatedAt)
+                        .OrderBy(t => t.CreatedAt)
                         .FirstOrDefaultAsync();
 
                     if (item == null)

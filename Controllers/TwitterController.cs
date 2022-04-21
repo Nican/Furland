@@ -40,7 +40,7 @@ namespace FurlandGraph.Controllers
                 return NotFound();
             }
 
-            Response.Headers["cache-control"] = "max-age=604800";
+            Response.Headers["cache-control"] = "public, max-age=604800";
             return File(picture.Data, "image/png");
         }
 
@@ -108,7 +108,7 @@ namespace FurlandGraph.Controllers
 
             return new
             {
-                Id = user.Id,
+                Id = user.Id.ToString(),
                 ScreenName = user.ScreenName,
                 Name = user.Name,
             };

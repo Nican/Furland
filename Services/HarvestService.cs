@@ -197,10 +197,6 @@ namespace FurlandGraph.Services
                 {
                     await UserService.AddDeletedUser(dbContext, workItem.UserId);
                 }
-                catch (Exception e)
-                {
-                    throw e;
-                }
                 return true;
             }
 

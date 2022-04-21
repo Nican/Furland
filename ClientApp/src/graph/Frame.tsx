@@ -164,7 +164,8 @@ const UserLoadDataComponent: React.FC<UserLoadDataComponentProps> = props => {
 
   if (failed) {
     return <div style={{ color: 'red' }}>
-      Request has failed. Please reload the page.
+      <div>Request has failed. Please reload the page.</div>
+      <div>You will not lose your position in queue.</div>
     </div>;
   }
 

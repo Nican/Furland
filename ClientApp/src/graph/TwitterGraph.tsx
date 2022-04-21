@@ -54,7 +54,7 @@ export const TwitterGraphWithConfig: React.FC<TwitterGraphProps> = props => {
     },
   */
 
-  const [{ slowDown, mutualsOnly, topN, maxFriendRank, images, maxFriendRatio, resolution }, set] = useControls('Graph', (): any => ({
+  const [{ slowDown, mutualsOnly, topN, maxFriendRank, images, maxFriendRatio, resolution, stroke }, set] = useControls('Graph', (): any => ({
     totalNodes: {
       value: ``,
       editable: false,
@@ -77,15 +77,19 @@ export const TwitterGraphWithConfig: React.FC<TwitterGraphProps> = props => {
       render: () => false,
     },
     images: true,
+    stroke: {
+      value: true,
+      render: (get: any) => get('Graph.images') === true,
+    },
     resolution: {
       value: 10,
       min: 1,
       max: 20,
-      render: (get: any) => get('Graph.images') === false,
+      render: (get: any) => get('Graph.images') === false || get('Graph.stroke') === true,
     },
     mutualsOnly: params.get('mutualsOnly') === 'true',
     topN: {
-      value: parseInt(params.get('topN') || '20', 10) || 20,
+      value: parseInt(params.get('topN') || '50', 10) || 50,
       min: 1,
       max: 100,
     },
@@ -95,9 +99,9 @@ export const TwitterGraphWithConfig: React.FC<TwitterGraphProps> = props => {
       max: 100,
     },
     maxFriendRatio: {
-      value: 0,
+      value: parseInt(params.get('maxFriendRatio') || '0', 10) || 0,
       min: 0,
-      max: 100,
+      max: 99,
     },
     reset: button(() => {
       if (resetRef.current) {
@@ -123,9 +127,10 @@ export const TwitterGraphWithConfig: React.FC<TwitterGraphProps> = props => {
     newParams.set('topN', topN);
     newParams.set('maxFriendRank', maxFriendRank);
     newParams.set('mutualsOnly', mutualsOnly);
+    newParams.set('maxFriendRatio', maxFriendRatio);
 
     window.history.pushState(undefined, '', window.location.pathname + '?' + newParams.toString());
-  }, [topN, maxFriendRank, mutualsOnly]);
+  }, [topN, maxFriendRank, mutualsOnly, maxFriendRatio]);
 
   const config: Config = {
     graph: {
@@ -139,6 +144,7 @@ export const TwitterGraphWithConfig: React.FC<TwitterGraphProps> = props => {
       slowDown,
       linLogMode: false,
       images,
+      stroke,
     },
     edge: {
       edgeAlgorithm: 'HeapOrder',
@@ -268,7 +274,7 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
   }
 
   saveAsPng() {
-    saveAsPng(this.graph, this.props.screenName);
+    saveAsPng(this.graph, this.props.screenName, this.props.config.graph.stroke);
   }
 
   reset() {
@@ -285,7 +291,6 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
   }
 
   onEachNodeAttributesUpdated() {
-    this.updateId++;
     this.graph.forEachNode((_idx, attr) => {
       const ref = attr.ref.current;
       if (ref) {
@@ -355,6 +360,7 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
 
   clearupNodes() {
     const { graph, props: { config } } = this;
+    const graphConfig = config.graph;
     let nodes = 0;
     let maxCommunity = 1;
 
@@ -368,12 +374,14 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
     graph.updateEachNodeAttributes(
       function (node, attr) {
         const empty = graph.degree(node) === 0;
+        const color = `hsl(${attr.community / maxCommunity * 360}, 100%, 50%)`;
 
         if (attr.fixed !== empty) {
           attr.fixed = empty;
           attr.x = (Math.random() - 0.5) * screenSize;
           attr.y = (Math.random() - 0.5) * screenSize;
         }
+        attr.color = color;
 
         if (!empty) {
           nodes++;
@@ -381,13 +389,13 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
 
         const ref = attr.ref.current;
         if (ref) {
-          const color = config.graph.images ? `url(#profileImage${attr.id})` : `hsl(${attr.community / maxCommunity * 360}, 100%, 50%)`;
           ref.style.display = empty ? 'none' : null;
-          ref.setAttribute('fill', config.graph.images ? `url(#profileImage${attr.id})` : color);
+          ref.setAttribute('fill', graphConfig.images ? `url(#profileImage${attr.id})` : color);
+          ref.setAttribute('stroke', graphConfig.images && graphConfig.stroke ? color : '');
         }
         return attr;
       },
-      { attributes: ['fixed', 'x', 'y'] }
+      { attributes: ['fixed', 'x', 'y', 'color'] }
     );
 
     this.props.setStats({
@@ -578,6 +586,7 @@ class UserNode extends Component<UserNodeProps> {
       fill={`url(#profileImage${idx})`}
       ref={this.props.nodeRef}
       r={nodeRadius}
+      strokeWidth="2"
     />;
   }
 }

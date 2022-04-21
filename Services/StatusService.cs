@@ -41,19 +41,29 @@ namespace FurlandGraph.Services
                 user = await LoadUserProfile(username);
             }
 
-            if(user.Protected)
+            if (user.Protected)
             {
                 throw new AccountIsProtectedException();
             }
 
             if (nodes == "friends" && user.FriendsCount > 10000)
             {
-                throw new TooManyNodesExepction("Can not render more than 10,000 nodes.");
+                throw new TooManyNodesExepction("Can not render more than 10,000 nodes");
             }
             else if (nodes == "followers" && user.FollowersCount > 10000)
             {
-                throw new TooManyNodesExepction("Can not render more than 10,000 nodes.");
+                throw new TooManyNodesExepction("Can not render more than 10,000 nodes");
             }
+
+            if (relationship == "friends" && user.FriendsCount > MatrixService.MaxAccountSize)
+            {
+                throw new TooManyNodesExepction("Can not gather more than 50,000 edges");
+            }
+            else if (relationship == "followers" && user.FollowersCount > MatrixService.MaxAccountSize)
+            {
+                throw new TooManyNodesExepction("Can not gather more than 50,000 edges");
+            }
+
 
             var userFriends = await LoadUserFriends(user, nodes, requesterId, canAddWork);
             if (userFriends != null)
@@ -264,7 +274,7 @@ namespace FurlandGraph.Services
             var workItemName = $"{nodes}+{relationship}";
             var cacheItem = await Context.GraphCache
                 .Where(t => t.UserId == user.Id && t.Type == workItemName)
-                .Select(t => new { t.UserId, t.FinishedAt })
+                .Select(t => new { t.UserId, t.FinishedAt, t.CreatedAt })
                 .FirstOrDefaultAsync();
 
             if (cacheItem == null)
@@ -279,7 +289,7 @@ namespace FurlandGraph.Services
 
                     Context.GraphCache.Add(newCacheItem);
                     await Context.SaveChangesAsync();
-                    cacheItem = new { UserId = user.Id, FinishedAt = (DateTime?)null };
+                    cacheItem = new { UserId = user.Id, FinishedAt = (DateTime?)null, CreatedAt = DateTime.UtcNow };
                 }
             }
 
@@ -288,7 +298,7 @@ namespace FurlandGraph.Services
                 Id = user.Id,
                 ScreenName = user.ScreenName,
                 TotalWorkItems = await Context.GraphCache.Where(t => t.FinishedAt == null).CountAsync(),
-                NeedCollectedCount = 0,
+                NeedCollectedCount = 1,
                 Finished = cacheItem.FinishedAt.HasValue,
                 Stage = 4,
                 RequesterId = requesterId,
