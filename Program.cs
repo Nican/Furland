@@ -1,21 +1,10 @@
 using FurlandGraph.Migrations;
 using FurlandGraph.Models;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using SimpleMigrations;
 using SimpleMigrations.DatabaseProvider;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Tweetinvi;
-using Tweetinvi.Models;
-using Tweetinvi.Parameters;
-using Dapper;
 using FurlandGraph.Services;
+using System.Net;
 
 namespace FurlandGraph
 {
@@ -23,6 +12,11 @@ namespace FurlandGraph
     {
         public static void Main(string[] args)
         {
+            //ThreadPool.SetMaxThreads(2048, 2048);
+            //ThreadPool.SetMinThreads(256, 256);
+            ServicePointManager.DefaultConnectionLimit = int.MaxValue;
+            ServicePointManager.UseNagleAlgorithm = true;
+
             var host = CreateHostBuilder(args).Build();
 
             using (var serviceScope = host.Services.CreateScope())

@@ -2,6 +2,7 @@ import { decode } from '@msgpack/msgpack';
 import { useControls, useCreateStore, useStoreContext } from 'leva';
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { NicanTimeline } from '../Timeline';
 import { Config, DataConfig } from './Config';
 import { InputData } from './Data';
 import { TwitterGraphWithConfig } from './TwitterGraph';
@@ -57,12 +58,15 @@ export const GraphStateMachine: React.FC<GraphStateMachineProps> = props => {
   }
 
   if (!userLoadData || !userLoadData.finished) {
-    return <UserLoadDataComponent
-      screenName={screenName}
-      config={config}
-      userLoadData={userLoadData}
-      setUserLoadData={setUserLoadData}
-    />;
+    return <>
+      <UserLoadDataComponent
+        screenName={screenName}
+        config={config}
+        userLoadData={userLoadData}
+        setUserLoadData={setUserLoadData}
+      />
+      <NicanTimeline />
+    </>;
   }
 
   if (!graphData) {
@@ -145,10 +149,13 @@ const UserLoadDataComponent: React.FC<UserLoadDataComponentProps> = props => {
           const handle = setTimeout(() => {
             setAttempt(attempt + 1);
             console.log(`Finish timeout ${attempt + 1}`);
-          }, 5000);
+          }, 10000);
           setTimeoutHandle(handle);
         }
       } catch (e) {
+        setTimeout(() => {
+          window.location.reload();
+        }, 5 * 60 * 1000);
         setFailed(true);
       }
     }
@@ -188,7 +195,7 @@ const UserLoadDataComponent: React.FC<UserLoadDataComponentProps> = props => {
 
   return <div style={{ textAlign: 'center' }}>
     <div>Downloading follower data for {screenName}...</div>
-    <div>Work items left: {userLoadData.needCollectedCount}. (Total work items in queue: {userLoadData.totalWorkItems})</div>
+    <div>Position in queue: {userLoadData.needCollectedCount}. (Total work items in queue: {userLoadData.totalWorkItems})</div>
     <div>Twitter only gives out tokens every 15 minutes. The collection process can be pretty slow, please leave the tab open.</div>
     <StageDetails screenName={screenName} stage={userLoadData.stage} />
   </div>;

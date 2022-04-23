@@ -76,7 +76,8 @@ namespace FurlandGraph.Models
                 entity.Property(e => e.Type).HasColumnName("type");
                 entity.Property(e => e.Data).HasColumnName("data");
                 entity.Property(e => e.CreatedAt).HasColumnName("createdat");
-                entity.Property(e => e.FinishedAt).HasColumnName("finishedat");                
+                entity.Property(e => e.FinishedAt).HasColumnName("finishedat");
+                entity.Property(e => e.LastRequest).HasColumnName("lastRequest");
                 entity.HasKey(c => new { c.UserId, c.Type });
             });
 

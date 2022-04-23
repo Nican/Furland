@@ -12,6 +12,8 @@ namespace FurlandGraph.Models
 
         public DateTime? FinishedAt { get; set; }
 
+        public DateTime? LastRequest { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 

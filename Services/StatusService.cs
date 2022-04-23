@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Tweetinvi;
+using Dapper;
 
 namespace FurlandGraph.Services
 {
@@ -15,6 +16,27 @@ namespace FurlandGraph.Services
         public string Error { get; set; }
         public long Stage { get; set; }
         public long? RequesterId { get; set; }
+    }
+
+    public class BasicUser
+    {
+        public long Id { get; set; }
+
+        public bool Deleted { get; set; }
+
+        public DateTime LastUpdate { get; set; }
+
+        public string ScreenName { get; set; }
+
+        public bool Protected { get; set; }
+
+        public long FriendsCount { get; set; }
+
+        public DateTime? FriendsCollected { get; set; }
+
+        public long FollowersCount { get; set; }
+
+        public DateTime? FollowersCollected { get; set; }
     }
 
     public class StatusService
@@ -35,7 +57,22 @@ namespace FurlandGraph.Services
         public async Task<LoadStatus> CheckStatus(string username, string nodes, string relationship, long? requesterId)
         {
             bool canAddWork = requesterId.HasValue ? (await Context.WorkItems.CountAsync(t => t.ForUser == requesterId) < 100) : false;
-            var user = await Context.Users.Where(t => t.ScreenName == username).FirstOrDefaultAsync();
+            var user = await Context.Users
+                .Where(t => t.ScreenName == username)
+                .Select(t => new BasicUser
+                {
+                    Id = t.Id,
+                    Deleted = t.Deleted,
+                    LastUpdate = t.LastUpdate,
+                    Protected = t.Protected,
+                    ScreenName = t.ScreenName,
+                    FollowersCollected = t.FollowersCollected,
+                    FollowersCount = t.FollowersCount,
+                    FriendsCollected = t.FriendsCollected,
+                    FriendsCount = t.FriendsCount,
+                })
+                .FirstOrDefaultAsync();
+
             if (user == null)
             {
                 user = await LoadUserProfile(username);
@@ -55,13 +92,16 @@ namespace FurlandGraph.Services
                 throw new TooManyNodesExepction("Can not render more than 10,000 nodes");
             }
 
-            if (relationship == "friends" && user.FriendsCount > MatrixService.MaxAccountSize)
+            if (!requesterId.HasValue || user.Id != requesterId.Value)
             {
-                throw new TooManyNodesExepction("Can not gather more than 50,000 edges");
-            }
-            else if (relationship == "followers" && user.FollowersCount > MatrixService.MaxAccountSize)
-            {
-                throw new TooManyNodesExepction("Can not gather more than 50,000 edges");
+                if (relationship == "friends" && user.FriendsCount > MatrixService.MaxAccountSize)
+                {
+                    throw new TooManyNodesExepction($"Can not gather more than {MatrixService.MaxAccountSize} edges");
+                }
+                else if (relationship == "followers" && user.FollowersCount > MatrixService.MaxAccountSize)
+                {
+                    throw new TooManyNodesExepction($"Can not gather more than {MatrixService.MaxAccountSize} edges");
+                }
             }
 
 
@@ -78,6 +118,16 @@ namespace FurlandGraph.Services
 
             var followers = await Context.Users
                 .Where(t => relationList.Contains(t.Id))
+                .Select(t => new BasicUser { 
+                    Id = t.Id, 
+                    Deleted = t.Deleted, 
+                    LastUpdate = t.LastUpdate, 
+                    Protected = t.Protected,
+                    FollowersCollected = t.FollowersCollected,
+                    FollowersCount = t.FollowersCount,
+                    FriendsCollected = t.FriendsCollected,
+                    FriendsCount = t.FriendsCount,
+                })
                 .ToDictionaryAsync(t => t.Id);
 
             var userProfiles = await LoadUserProfiles(user, relationList, followers, requesterId, canAddWork);
@@ -95,7 +145,7 @@ namespace FurlandGraph.Services
             return await CalculateGraph(user, nodes, relationship, requesterId, canAddWork);
         }
 
-        public async Task<User> LoadUserProfile(string screenName)
+        public async Task<BasicUser> LoadUserProfile(string screenName)
         {
             var twitterConfig = TwitterConfiguration.Value;
             var token = await this.Context.TwitterTokens
@@ -107,10 +157,22 @@ namespace FurlandGraph.Services
 
             var user = await client.Users.GetUserAsync(screenName);
             // TODO: Do we call the user API too often?
-            return await UserService.CollectUser(Context, user);
+            var t = await UserService.CollectUser(Context, user);
+            return new BasicUser
+            {
+                Id = t.Id,
+                Deleted = t.Deleted,
+                LastUpdate = t.LastUpdate,
+                Protected = t.Protected,
+                ScreenName = t.ScreenName,
+                FollowersCollected = t.FollowersCollected,
+                FollowersCount = t.FollowersCount,
+                FriendsCollected = t.FriendsCollected,
+                FriendsCount = t.FriendsCount,
+            };
         }
 
-        public async Task<LoadStatus> LoadUserFriends(User user, string nodes, long? requesterId, bool canAddWork)
+        public async Task<LoadStatus> LoadUserFriends(BasicUser user, string nodes, long? requesterId, bool canAddWork)
         {
             DateTime? collectedNodes = nodes == "friends" ? user.FriendsCollected : user.FollowersCollected;
             if (!collectedNodes.HasValue || collectedNodes.Value < Past)
@@ -134,8 +196,8 @@ namespace FurlandGraph.Services
                 {
                     Id = user.Id,
                     ScreenName = user.ScreenName,
-                    TotalWorkItems = await Context.WorkItems.CountAsync(),
-                    NeedCollectedCount = 1,
+                    TotalWorkItems = 1,
+                    NeedCollectedCount = await GetQueuePosition(requesterId),
                     Finished = false,
                     Stage = 1,
                     RequesterId = requesterId,
@@ -145,7 +207,7 @@ namespace FurlandGraph.Services
             return null;
         }
 
-        public async Task<LoadStatus> LoadUserProfiles(User user, List<long> relationList, Dictionary<long, User> followers, long? requesterId, bool canAddWork)
+        public async Task<LoadStatus> LoadUserProfiles(BasicUser user, List<long> relationList, Dictionary<long, BasicUser> followers, long? requesterId, bool canAddWork)
         {
             var needUserCollect = relationList
                  .Where(userId =>
@@ -178,7 +240,7 @@ namespace FurlandGraph.Services
                     {
                         return new WorkItem()
                         {
-                            ForUser = user.Id,
+                            ForUser = requesterId.Value,
                             UserId = t,
                             Type = "user",
                         };
@@ -186,13 +248,12 @@ namespace FurlandGraph.Services
                     await Context.SaveChangesAsync();
                 }
 
-                var totalWorkItems = await Context.WorkItems.CountAsync();
                 return new LoadStatus()
                 {
                     Id = user.Id,
                     ScreenName = user.ScreenName,
-                    TotalWorkItems = totalWorkItems,
-                    NeedCollectedCount = needUserCollect.Count,
+                    TotalWorkItems = needUserCollect.Count,
+                    NeedCollectedCount = await GetQueuePosition(requesterId),
                     Finished = false,
                     Stage = 2,
                     RequesterId = requesterId,
@@ -202,11 +263,11 @@ namespace FurlandGraph.Services
             return null;
         }
 
-        public async Task<LoadStatus> LoadFriendFriends(User user, string relationship, Dictionary<long, User> followers, long? requesterId, bool canAddWork)
+        public async Task<LoadStatus> LoadFriendFriends(BasicUser user, string relationship, Dictionary<long, BasicUser> followers, long? requesterId, bool canAddWork)
         {
             // Stage 3 - Collect user followers
             var needCollected = followers.Values
-                .Where(t => !string.IsNullOrEmpty(t.ScreenName) && !t.Protected && !t.Deleted)
+                .Where(t => !t.Protected && !t.Deleted)
                 .Where(t =>
                 {
                     if (relationship == "friends")
@@ -252,13 +313,12 @@ namespace FurlandGraph.Services
                     await Context.SaveChangesAsync();
                 }
 
-                var totalWorkItems = await Context.WorkItems.CountAsync();
                 return new LoadStatus()
                 {
                     Id = user.Id,
                     ScreenName = user.ScreenName,
-                    TotalWorkItems = totalWorkItems,
-                    NeedCollectedCount = needCollected.Count,
+                    TotalWorkItems = needCollected.Count,
+                    NeedCollectedCount = await GetQueuePosition(requesterId),
                     Finished = needCollected.Count == 0,
                     Stage = 3,
                     RequesterId = requesterId,
@@ -268,7 +328,7 @@ namespace FurlandGraph.Services
             return null;
         }
 
-        public async Task<LoadStatus> CalculateGraph(User user, string nodes, string relationship, long? requesterId, bool canAddWork)
+        public async Task<LoadStatus> CalculateGraph(BasicUser user, string nodes, string relationship, long? requesterId, bool canAddWork)
         {
             // Stage 4 - calculate friendship graph
             var workItemName = $"{nodes}+{relationship}";
@@ -292,17 +352,33 @@ namespace FurlandGraph.Services
                     cacheItem = new { UserId = user.Id, FinishedAt = (DateTime?)null, CreatedAt = DateTime.UtcNow };
                 }
             }
+            else
+            {
+                await Context.Database.ExecuteSqlInterpolatedAsync(@$"UPDATE ""graphCache"" SET ""lastRequest""=NOW() WHERE ""userId""={user.Id} and ""type""={workItemName}");
+            }
 
+            var createdAt = cacheItem?.CreatedAt.ToUniversalTime();
             return new LoadStatus()
             {
                 Id = user.Id,
                 ScreenName = user.ScreenName,
                 TotalWorkItems = await Context.GraphCache.Where(t => t.FinishedAt == null).CountAsync(),
-                NeedCollectedCount = 1,
+                NeedCollectedCount = !createdAt.HasValue ? 0 : await Context.GraphCache.Where(t => t.FinishedAt == null && t.CreatedAt < createdAt).CountAsync(),
                 Finished = cacheItem.FinishedAt.HasValue,
                 Stage = 4,
                 RequesterId = requesterId,
             };
+        }
+
+        private async Task<long> GetQueuePosition(long? userId)
+        {
+            if(!userId.HasValue)
+            {
+                return -1;
+            }
+
+            var entries = await Context.Database.GetDbConnection().QueryAsync<long>(@"select wi.""forUser"" FROM ""workItem"" wi group by wi.""forUser"",wi.type order by min(wi.id) asc ");
+            return entries.ToList().IndexOf(userId.Value);
         }
     }
 

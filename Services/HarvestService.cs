@@ -9,121 +9,208 @@ using Tweetinvi.Parameters;
 
 namespace FurlandGraph.Services
 {
+    public class BasicHarvestUser
+    {
+        public string ScreenName { get; set; }
+
+        public bool Deleted { get; set; }
+
+        public bool Protected { get; set; }
+
+        public DateTime? FollowersCollected { get; set; }
+
+        public DateTime? FriendsCollected { get; set; }
+    }
+
     public class HarvestService
     {
-        public HarvestService(FurlandContext context, IDbContextFactory<FurlandContext> contextFactory, IOptions<TwitterConfiguration> twitterConfiguration, UserService userService)
+        public HarvestService(
+            FurlandContext context,
+            IDbContextFactory<FurlandContext> contextFactory,
+            IOptions<TwitterConfiguration> twitterConfiguration,
+            IOptions<HarvesterConfig> harvestConfiguration,
+            UserService userService)
         {
             Context = context;
             ContextFactory = contextFactory;
             TwitterConfiguration = twitterConfiguration;
+            HarvestConfiguration = harvestConfiguration;
             UserService = userService;
         }
 
         public FurlandContext Context { get; }
         public IDbContextFactory<FurlandContext> ContextFactory { get; }
         public IOptions<TwitterConfiguration> TwitterConfiguration { get; }
+        public IOptions<HarvesterConfig> HarvestConfiguration { get; }
         public UserService UserService { get; }
+
+
+        public Queue<long> WorkItems = new Queue<long>();
+
+        public Queue<TwitterToken> AvailableTokens = new Queue<TwitterToken>();
 
         public async Task ParallelRun()
         {
-            try
+            if (!HarvestConfiguration.Value.Enabled)
             {
-                int maxWorkers = 100;
-                var trackers = new Dictionary<Task<bool>, TwitterClientTracker>();
+                Console.WriteLine($"!! Harvest service not enabled !!");
+                return;
+            }
 
-                while (true)
+            while (true)
+            {
+                try
                 {
-                    TwitterClientTracker tracker = null;
-                    var completedTask = trackers.Keys.FirstOrDefault(t => t.IsCompleted); // Check if any of the workers is finished
+                    long count = 0;
+                    // int maxWorkers = 100;
+                    var trackers = new Dictionary<Task<bool>, TwitterClientTracker>();
 
-                    if (completedTask == null)
+                    Console.WriteLine($"Max workers: {HarvestConfiguration.Value.MaxWorkers}");
+
+                    while (true)
                     {
-                        if (trackers.Count >= maxWorkers) // If no workers are finished, see if we can create a new one
+                        TwitterClientTracker tracker = null;
+                        var completedTask = trackers.Keys.Where(t => t.IsCompleted).OrderBy(t => t.Id).FirstOrDefault(); // Check if any of the workers is finished
+
+                        if (completedTask == null)
                         {
-                            await Task.Delay(TimeSpan.FromSeconds(0.1));
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        trackers.Remove(completedTask, out tracker); // Remove the worker from the list
-                        try
-                        {
-                            bool result = await completedTask; // If the pagination is finished, remove the work item
-                            if (result)
+                            if (trackers.Count >= HarvestConfiguration.Value.MaxWorkers) // If no workers are finished, see if we can create a new one
                             {
-                                var workItemToRemove = await Context.WorkItems.FindAsync(tracker.WorkItemId);
-                                Context.WorkItems.Remove(workItemToRemove);
-                                await Context.SaveChangesAsync();
+                                await Task.Delay(TimeSpan.FromSeconds(0.1));
+                                continue;
                             }
                         }
-                        catch (TwitterException ex) when (ex.Message.Contains("Rate limit exceeded (88)"))
+                        else
                         {
-                            var a = tracker.TwitterClient.RateLimits.GetEndpointRateLimitAsync(ex.URL);
-                            var waitTime = TimeSpan.FromSeconds(ex.TwitterQuery.QueryRateLimit.ResetDateTimeInSeconds + 5);
+                            trackers.Remove(completedTask, out tracker); // Remove the worker from the list
+                            try
+                            {
+                                bool result = await completedTask; // If the pagination is finished, remove the work item
+                                if (result)
+                                {
+                                    // var workItemToRemove = await Context.WorkItems.FindAsync(tracker.WorkItemId);
+                                    // Context.WorkItems.Remove(workItemToRemove);
+                                    // await Context.SaveChangesAsync();
+                                }
+                            }
+                            catch (TwitterException ex) when (ex.Message.Contains("Rate limit exceeded (88)"))
+                            {
+                                var a = tracker.TwitterClient.RateLimits.GetEndpointRateLimitAsync(ex.URL);
+                                var waitTime = TimeSpan.FromMinutes(15);
 
-                            // API Key has no calls left
-                            tracker.Token.NextFriendsRequest = DateTime.UtcNow + waitTime; 
+                                if (ex.TwitterQuery != null && ex.TwitterQuery.QueryRateLimit != null)
+                                {
+                                    waitTime = TimeSpan.FromSeconds(ex.TwitterQuery.QueryRateLimit.ResetDateTimeInSeconds + 5);
+                                }
+                                else
+                                {
+                                    Console.WriteLine("What error is this?" + ex.ToString());
+                                    Console.WriteLine("What error is this? PArt 2" + ex.Message);
+                                    Console.WriteLine("What error is this? PArt 3" + ex.TwitterDescription.ToString());
+                                }
+
+                                // API Key has no calls left
+                                tracker.Token.NextFriendsRequest = DateTime.UtcNow + waitTime;
+                                await Context.SaveChangesAsync();
+                                tracker = null;
+                            }
+                            catch (TwitterException ex) when (ex.Message.Contains("Invalid or expired token"))
+                            {
+                                Context.TwitterTokens.Remove(tracker.Token);
+                                await Context.SaveChangesAsync();
+                                tracker = null;
+                            }
+                            catch (TwitterException ex) when (ex.ToString().Contains("To protect our users from spam and other malicious activity, this account is temporarily locked."))
+                            {
+                                // Oooops
+                                Console.WriteLine("To protect our users from spam and other malicious activity, this account is temporarily locked.");
+
+                                tracker.Token.NextFriendsRequest = DateTime.UtcNow + TimeSpan.FromDays(1000);
+                                await Context.SaveChangesAsync();
+
+                                tracker = null;
+                            }
+                            catch (TwitterTimeoutException ex)
+                            {
+                                // .NET is limiting the number of concurrent conncetions....
+                                // Just wait a while
+                                await Task.Delay(TimeSpan.FromSeconds(5));
+                                Console.WriteLine("Twitter timeout...");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine("Unkown error type: " + ex.GetType().FullName);
+                                Console.WriteLine("Error full: " + ex.ToString());
+                                Console.WriteLine("Error inner: " + ex.InnerException?.ToString());
+                            }
+                        }
+
+                        if (tracker != null && !tracker.CanWork()) // API key has no calls left
+                        {
+                            var nextRequest = TimeSpan.FromMinutes(15);
+
+                            //var rateLimit = await tracker.TwitterClient.RateLimits.GetEndpointRateLimitAsync("https://api.twitter.com/1.1/followers/ids.json");
+                            //if (rateLimit != null)
+                            //{
+                            //    nextRequest = TimeSpan.FromSeconds(rateLimit.ResetDateTimeInSeconds + 5);
+                            //}
+
+                            tracker.Token.NextFriendsRequest = DateTime.UtcNow + nextRequest;
                             await Context.SaveChangesAsync();
                             tracker = null;
                         }
-                        catch (TwitterException ex) when (ex.Message.Contains("Invalid or expired token"))
+
+                        if (tracker == null) // Finda new API key
                         {
-                            Context.TwitterTokens.Remove(tracker.Token);
-                            await Context.SaveChangesAsync();
-                            tracker = null;
-                        }                        
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine(ex.GetType().FullName);
-                            Console.WriteLine(ex.ToString());
-                            Console.WriteLine(ex.StackTrace);
+                            var token = await GetNextToken(trackers.Values.Select(t => t.Token.Id).ToList());
+                            if (token == null)
+                            {
+                                await Task.Delay(TimeSpan.FromSeconds(1)); // No API Keys found
+                                continue;
+                            }
+
+                            var client = GetClientFromToken(token);
+
+                            // Backfill
+                            if (string.IsNullOrWhiteSpace(token.BearerToken))
+                            {
+                                try
+                                {
+                                    var tokenStr = await client.Auth.CreateBearerTokenAsync();
+                                    token.BearerToken = tokenStr;
+                                    await Context.SaveChangesAsync();
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine("Failed to create bearer token: " + ex.ToString());
+                                }
+                            }
+
+                            tracker = new TwitterClientTracker(token, client);
                         }
-                    }
 
-                    if (tracker != null && !tracker.CanWork()) // API key has no calls left
-                    {
-                        var rateLimit = await tracker.TwitterClient.RateLimits.GetEndpointRateLimitAsync("https://api.twitter.com/1.1/followers/ids.json");
-                        var nextRequest = TimeSpan.FromMinutes(15);
-
-                        if(rateLimit != null)
+                        var workItemId = await GetNextWorkItem(trackers.Values.Select(t => t.WorkItemId).ToList()); // Find new user to crawl
+                        if (!workItemId.HasValue)
                         {
-                            nextRequest = TimeSpan.FromSeconds(rateLimit.ResetDateTimeInSeconds + 5);
-                        }
-
-                        tracker.Token.NextFriendsRequest = DateTime.UtcNow + nextRequest;
-                        await Context.SaveChangesAsync();
-                        tracker = null;
-                    }
-
-                    if (tracker == null) // Finda new API key
-                    {
-                        var token = await GetNextToken(trackers.Values.Select(t => t.Token.Id).ToList());
-                        if (token == null)
-                        {
-                            await Task.Delay(TimeSpan.FromSeconds(1)); // No API Keys found
+                            await Task.Delay(TimeSpan.FromSeconds(1));
                             continue;
                         }
 
-                        var client = GetClientFromToken(token);
-                        tracker = new TwitterClientTracker(token, client);
-                    }
+                        tracker.WorkItemId = workItemId.Value;
+                        var task = Task.Run(() => Harvest(tracker)); // Start async worker
+                        trackers[task] = tracker;
 
-                    var workItemId = await GetNextWorkItem(trackers.Values.Select(t => t.WorkItemId).ToList()); // Find new user to crawl
-                    if (!workItemId.HasValue)
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(1));
-                        continue;
+                        if (count++ % 1000 == 0)
+                        {
+                            Console.WriteLine($"[{DateTime.UtcNow}] Total workers: {trackers.Count}");
+                        }
                     }
-
-                    tracker.WorkItemId = workItemId.Value;
-                    var task = Task.Run(() => Harvest(tracker)); // Start async worker
-                    trackers[task] = tracker;
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.ToString());
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Harvest worker thread died: " + ex.ToString());
+                }
+                await Task.Delay(TimeSpan.FromSeconds(5));
             }
         }
 
@@ -131,9 +218,9 @@ namespace FurlandGraph.Services
         {
             var twitterConfig = TwitterConfiguration.Value;
 
-            TwitterClient client = null;
+            TwitterClient client;
 
-            if (string.IsNullOrWhiteSpace(token.BearerToken))
+            if (!string.IsNullOrWhiteSpace(token.AccessToken))
             {
                 client = new TwitterClient(twitterConfig.ConsumerKey, twitterConfig.ConsumerSecret, token.AccessToken, token.AccessSecret);
             }
@@ -142,37 +229,111 @@ namespace FurlandGraph.Services
                 client = new TwitterClient(twitterConfig.ConsumerKey, twitterConfig.ConsumerSecret, token.BearerToken);
             }
 
+            client.Config.HttpRequestTimeout = TimeSpan.FromSeconds(60);
             client.Config.RateLimitTrackerMode = RateLimitTrackerMode.TrackOnly;
             return client;
         }
 
         public async Task<TwitterToken> GetNextToken(List<long> activeIds)
         {
-            return await this.Context.TwitterTokens
+            if (AvailableTokens.TryDequeue(out var result))
+            {
+                return result;
+            }
+
+            await GetMoreTokens(activeIds);
+
+            if (AvailableTokens.TryDequeue(out result))
+            {
+                return result;
+            }
+            return null;
+        }
+
+        public async Task GetMoreTokens(List<long> activeIds)
+        {
+            var tokens = await Context.TwitterTokens
                 .Where(t => !activeIds.Contains(t.Id) && t.NextFriendsRequest < DateTime.UtcNow)
                 .OrderBy(t => t.NextFriendsRequest)
-                .FirstOrDefaultAsync();
+                .Take(100)
+                .ToListAsync();
+
+            foreach (var token in tokens)
+            {
+                AvailableTokens.Enqueue(token);
+            }
         }
 
         public async Task<long?> GetNextWorkItem(List<long> activeIds)
         {
-            var workItem = await this.Context.WorkItems
+            if (WorkItems.TryDequeue(out var result))
+            {
+                return result;
+            }
+
+            var moreWork = await GetNextWorkItemsToQueue(activeIds);
+
+            foreach (var item in moreWork)
+            {
+                WorkItems.Enqueue(item);
+            }
+
+            if (WorkItems.TryDequeue(out result))
+            {
+                return result;
+            }
+
+            return null;
+        }
+
+        public async Task<List<long>> GetNextWorkItemsToQueue(List<long> activeIds)
+        {
+            var workItems = await Context.WorkItems
                 .Where(t => !activeIds.Contains(t.Id))
                 .OrderBy(t => t.Id)
-                .FirstOrDefaultAsync();
-            return workItem?.Id;
+                .Take(100)
+                .Select(t => t.Id)
+                .ToListAsync();
+
+            return workItems;
         }
+
 
         public async Task<bool> Harvest(TwitterClientTracker tracker)
         {
             using var dbContext = await ContextFactory.CreateDbContextAsync();
             var workItem = await dbContext.WorkItems.FindAsync(tracker.WorkItemId);
-            var dbUser = await dbContext.Users.FindAsync(workItem.UserId);
+
+            bool result = await HarvestInner(dbContext, workItem, tracker);
+
+            if(result)
+            {
+                dbContext.WorkItems.Remove(workItem);
+                await dbContext.SaveChangesAsync();
+            }
+
+            return result;
+        }
+
+        public async Task<bool> HarvestInner(FurlandContext dbContext, WorkItem workItem, TwitterClientTracker tracker)
+        {
+            BasicHarvestUser dbUser = await dbContext.Users
+                .Where(t => t.Id == workItem.UserId)
+                .Select(t => new BasicHarvestUser()
+                {
+                    Deleted = t.Deleted,
+                    FollowersCollected = t.FollowersCollected,
+                    FriendsCollected = t.FriendsCollected,
+                    Protected = t.Protected,
+                    ScreenName = t.ScreenName,
+                })
+                .FirstOrDefaultAsync();
 
             if (dbUser != null && (dbUser.Deleted || string.IsNullOrEmpty(dbUser.ScreenName)))
             {
-                dbUser.LastUpdate = DateTime.UtcNow;
-                await dbContext.SaveChangesAsync();
+                await dbContext.Database.ExecuteSqlInterpolatedAsync(@$"UPDATE users SET ""lastUpdate""=now(),deleted=true WHERE ""id""={workItem.UserId}");
+                // dbUser.LastUpdate = DateTime.UtcNow;
+                // await dbContext.SaveChangesAsync();
                 return true;
             }
 
@@ -209,8 +370,6 @@ namespace FurlandGraph.Services
                 var iterator = GetIterator(workItem.Type);
                 if (!iterator.UserCanUpdate(dbUser))
                 {
-                    dbUser.FriendsCollected = DateTime.UtcNow;
-                    await dbContext.SaveChangesAsync();
                     return true;
                 }
 
@@ -219,22 +378,19 @@ namespace FurlandGraph.Services
             catch (TwitterException ex) when (ex.StatusCode == 401 && ex.Content.Contains("Unauthorized"))
             {
                 // User has their account set to private? 
-                dbUser.Protected = true;
-                await dbContext.SaveChangesAsync();
+                await dbContext.Database.ExecuteSqlInterpolatedAsync(@$"UPDATE users SET ""protected""=true WHERE ""id""={workItem.UserId}");
                 return true;
             }
             catch (TwitterException ex) when (ex.StatusCode == 401 && ex.Content.Contains("Not authorized"))
             {
                 // User has their account set to private? 
-                dbUser.Protected = true;
-                await dbContext.SaveChangesAsync();
+                await dbContext.Database.ExecuteSqlInterpolatedAsync(@$"UPDATE users SET ""protected""=true WHERE ""id""={workItem.UserId}");
                 return true;
             }
             catch (TwitterException ex) when (ex.StatusCode == 404 && ex.Content.Contains("Sorry, that page does not exist"))
             {
                 // User has their account set to private? 
-                dbUser.Protected = true;
-                await dbContext.SaveChangesAsync();
+                await dbContext.Database.ExecuteSqlInterpolatedAsync(@$"UPDATE users SET ""protected""=true WHERE ""id""={workItem.UserId}");
                 return true;
             }
         }
@@ -276,13 +432,14 @@ namespace FurlandGraph.Services
                 await userRelations.Save(dbContext, workItem.UserId, workItem.UserIds);
                 await dbContext.SaveChangesAsync();
                 await trans.CommitAsync();
+                return true;
             }
             else
             {
                 workItem.Cursor = iterator.NextCursor;
+                await dbContext.SaveChangesAsync();
+                return false;
             }
-
-            return iterator.Completed;
         }
     }
 
@@ -292,7 +449,7 @@ namespace FurlandGraph.Services
 
         public abstract Task Save(FurlandContext context, long userId, List<long> relationIds);
 
-        public abstract bool UserCanUpdate(User user);
+        public abstract bool UserCanUpdate(BasicHarvestUser user);
     }
 
     public class UserFriendIterator : UserRelationIterator
@@ -308,8 +465,7 @@ namespace FurlandGraph.Services
 
         public override async Task Save(FurlandContext context, long userId, List<long> relationIds)
         {
-            var dbUser = await context.Users.FindAsync(userId);
-            dbUser.FriendsCollected = DateTime.UtcNow;
+            await context.Database.ExecuteSqlInterpolatedAsync(@$"UPDATE users SET ""friendsCollected""=now() WHERE ""id""={userId}");
             await context.Database.ExecuteSqlInterpolatedAsync(@$"DELETE FROM ""userRelations"" WHERE ""userId""={userId} and ""type""='friends'");
             context.UserRelations.Add(new UserRelations()
             {
@@ -319,13 +475,8 @@ namespace FurlandGraph.Services
             });
         }
 
-        public override bool UserCanUpdate(User user)
+        public override bool UserCanUpdate(BasicHarvestUser user)
         {
-            if (user.FriendsCount > 6000)
-            {
-                return false;
-            }
-
             return user.FriendsCollected == null || user.FriendsCollected + TimeSpan.FromDays(30) < DateTime.UtcNow;
         }
     }
@@ -343,8 +494,7 @@ namespace FurlandGraph.Services
 
         public override async Task Save(FurlandContext context, long userId, List<long> relationIds)
         {
-            var dbUser = await context.Users.FindAsync(userId);
-            dbUser.FollowersCollected = DateTime.UtcNow;
+            await context.Database.ExecuteSqlInterpolatedAsync(@$"UPDATE users SET ""followersCollected""=now() WHERE ""id""={userId}");
             await context.Database.ExecuteSqlInterpolatedAsync(@$"DELETE FROM ""userRelations"" WHERE ""userId""={userId} and ""type""='followers'");
             context.UserRelations.Add(new UserRelations()
             {
@@ -354,13 +504,8 @@ namespace FurlandGraph.Services
             });
         }
 
-        public override bool UserCanUpdate(User user)
+        public override bool UserCanUpdate(BasicHarvestUser user)
         {
-            if (user.FollowersCount > 50000)
-            {
-                return false;
-            }
-
             return user.FollowersCollected == null || user.FollowersCollected + TimeSpan.FromDays(30) < DateTime.UtcNow;
         }
     }
@@ -383,7 +528,6 @@ namespace FurlandGraph.Services
         public void UseCall()
         {
             Interlocked.Decrement(ref CallsLeft);
-            Console.WriteLine($"Tracker use call: {CallsLeft}");
         }
 
         public bool CanWork()

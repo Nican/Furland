@@ -29,24 +29,6 @@ namespace FurlandGraph
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            ThreadPool.SetMinThreads(100, 100);
-
-            services.AddSession(options =>
-            {
-                options.IdleTimeout = TimeSpan.FromDays(60);
-            });
-
-            var redisConnString = Configuration.GetConnectionString("redis");
-
-            if (!string.IsNullOrWhiteSpace(redisConnString))
-            {
-                services.AddStackExchangeRedisCache(options =>
-                {
-                    options.Configuration = redisConnString;
-                    options.InstanceName = "SampleInstance";
-                });
-            }
-
             // services.AddRazorPages();
 
             services.AddResponseCompression(options =>
@@ -59,6 +41,7 @@ namespace FurlandGraph
             });
 
             services.Configure<TwitterConfiguration>(Configuration.GetSection("Twitter"));
+            services.Configure<HarvesterConfig>(Configuration.GetSection("Harvester"));
 
             services.AddHttpClient();
             services.AddDbContextFactory<FurlandContext>(options =>
@@ -92,7 +75,6 @@ namespace FurlandGraph
             }
 
             app.UseStaticFiles();
-            app.UseSession();
             app.UseRouting();
 
             app.UseEndpoints(endpoints =>

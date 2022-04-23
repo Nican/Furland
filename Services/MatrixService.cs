@@ -2,6 +2,8 @@ using Dapper;
 using FurlandGraph.Models;
 using MessagePack;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 
 namespace FurlandGraph.Services
@@ -17,41 +19,53 @@ namespace FurlandGraph.Services
 
     public class MatrixService
     {
-        public static readonly long MaxAccountSize = 50000;
+        public static readonly long MaxAccountSize = 150000;
 
-        public MatrixService(FurlandContext context)
+        public MatrixService(FurlandContext context, IOptions<HarvesterConfig> harvestConfiguration)
         {
             Context = context;
+            HarvestConfiguration = harvestConfiguration;
         }
 
         public FurlandContext Context { get; }
+        public IOptions<HarvesterConfig> HarvestConfiguration { get; }
 
         public async Task RunAsync()
         {
+            if(!HarvestConfiguration.Value.Matrix)
+            {
+                Console.WriteLine("!! Matrix service is disabled !!");
+                return;
+            }
+
             Console.WriteLine("Starting matrix service...");
 
-            try
+            while (true)
             {
-                while (true)
+                try
                 {
-                    var item = await this.Context.GraphCache
-                        .Where(t => t.Data == null)
-                        .OrderBy(t => t.CreatedAt)
-                        .FirstOrDefaultAsync();
-
-                    if (item == null)
+                    while (true)
                     {
-                        await Task.Delay(TimeSpan.FromSeconds(3));
-                        continue;
-                    }
+                        var item = await this.Context.GraphCache
+                            .Where(t => t.Data == null)
+                            .OrderBy(t => t.CreatedAt)
+                            .FirstOrDefaultAsync();
 
-                    await CalculateItem(item, CancellationToken.None);
-                    Context.ChangeTracker.Clear();
+                        if (item == null)
+                        {
+                            await Task.Delay(TimeSpan.FromSeconds(3));
+                            continue;
+                        }
+
+                        await CalculateItem(item, CancellationToken.None);
+                        Context.ChangeTracker.Clear();
+                    }
                 }
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e);
+                catch (Exception e)
+                {
+                    Console.WriteLine("Marvest worker thread died: " + e);
+                }
+                await Task.Delay(TimeSpan.FromSeconds(5));
             }
         }
 
@@ -139,13 +153,52 @@ namespace FurlandGraph.Services
         {
             int count = relations.Count;
             List<int> results = new(count * count + 1);
-            int i = 0;
 
+            var entries = new ConcurrentDictionary<int, int[]>();
+            var indexes = Enumerable.Range(0, count).ToList();
+
+            var options = new ParallelOptions()
+            {
+                MaxDegreeOfParallelism = Environment.ProcessorCount - 1,
+            };
+
+            Parallel.ForEach(indexes, options, index =>
+            {
+                var slice = new int[count];
+                var f1 = relations[index];
+
+                for (int j = index; j < count; j++)
+                {
+                    var f2 = relations[j];
+                    // This may be called 4,000,000 times for an user with 2,000 friends
+                    slice[j] = Relation.MergeCount(f1, f2);
+                }
+
+                entries[index] = slice;
+            });
+
+            for (int i = 0; i < count; i++)
+            {
+                var slice = entries[i];
+
+                // Since the matrix is symetrical over the diagonal axis
+                // We can just copy over the values we already computed
+                for (int j = 0; j < i; j++)
+                {
+                    var value = results[j * count + i];
+                    slice[j] = value;
+                }
+
+                results.AddRange(slice);
+            }
+
+            /*
+            int i = 0;
             foreach (var f1 in relations)
             {
                 // Since the matrix is symetrical over the diagonal axis
                 // We can just copy over the values we already computed
-                for(int j = 0; j < i; j++)
+                for (int j = 0; j < i; j++)
                 {
                     var value = results[j * count + i];
                     results.Add(value);
@@ -160,6 +213,7 @@ namespace FurlandGraph.Services
 
                 i++;
             }
+            */
 
             return results;
         }
