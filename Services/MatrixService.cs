@@ -32,7 +32,7 @@ namespace FurlandGraph.Services
 
         public async Task RunAsync()
         {
-            if(!HarvestConfiguration.Value.Matrix)
+            if (!HarvestConfiguration.Value.Matrix)
             {
                 Console.WriteLine("!! Matrix service is disabled !!");
                 return;
@@ -94,11 +94,11 @@ namespace FurlandGraph.Services
 
             if (relationship == "friends")
             {
-                users = users.Where(t => t.FriendsCount > 1 && t.FriendsCount <= MaxAccountSize).ToList();
+                users = users.Where(t => t.FriendsCount > 1).ToList();
             }
             else
             {
-                users = users.Where(t => t.FollowersCount > 1 && t.FollowersCount <= MaxAccountSize).ToList();
+                users = users.Where(t => t.FollowersCount > 1).ToList();
             }
 
             userFriends = users.Select(t => t.Id).ToList();

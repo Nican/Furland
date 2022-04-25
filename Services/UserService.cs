@@ -57,6 +57,7 @@ namespace FurlandGraph.Services
             dbUser.Verified = user.Verified;
             dbUser.ProfileImageUrlFullSize = user.ProfileImageUrlFullSize;
             dbUser.LastUpdate = DateTime.UtcNow;
+            dbUser.Deleted = false;
 
             if (user.Status != null)
             {

@@ -134,6 +134,7 @@ const UserLoadDataComponent: React.FC<UserLoadDataComponentProps> = props => {
   let [timeoutHandle, setTimeoutHandle] = useState<NodeJS.Timeout>();
   let [attempt, setAttempt] = useState(0);
   let [failed, setFailed] = useState(false);
+  const [stage, setStage] = useState(-1);
 
   useEffect(() => {
     async function fetchData() {
@@ -143,6 +144,10 @@ const UserLoadDataComponent: React.FC<UserLoadDataComponentProps> = props => {
         const response = await fetch(`/api/graph/user/${screenName}/status?nodes=${config.nodes}&relationship=${config.relationship}&userId=${userId}`);
         const json = await response.json();
         setUserLoadData(json);
+
+        if(json.stage && json.stage !== -1) {
+          setStage(json.stage);
+        }
 
         if (!json.finished && !json.error) {
           console.log('Set timeout');
@@ -197,7 +202,7 @@ const UserLoadDataComponent: React.FC<UserLoadDataComponentProps> = props => {
     <div>Downloading follower data for {screenName}...</div>
     <div>Position in queue: {userLoadData.needCollectedCount}. (Total work items in queue: {userLoadData.totalWorkItems})</div>
     <div>Twitter only gives out tokens every 15 minutes. The collection process can be pretty slow, please leave the tab open.</div>
-    <StageDetails screenName={screenName} stage={userLoadData.stage} />
+    <StageDetails screenName={screenName} stage={stage} />
   </div>;
 }
 
@@ -218,6 +223,10 @@ const StageDetails: React.FC<{ screenName: string; stage: number; }> = props => 
 
   if (stage === 4) {
     return <div>Stage 4/{totalStages}: Calculating friendship graph for {screenName}...</div>;
+  }
+
+  if (stage === -1) {
+    return <div>Stage unkown/{totalStages}: (Page was reloaded?)</div>;
   }
 
   return <></>;

@@ -22,6 +22,13 @@ namespace FurlandGraph.Services
         public DateTime? FriendsCollected { get; set; }
     }
 
+    public class WorkItemWithUser
+    {
+        public long Id { get; set; }
+
+        public BasicHarvestUser User { get; set; }
+    }
+
     public class HarvestService
     {
         public HarvestService(
@@ -170,22 +177,6 @@ namespace FurlandGraph.Services
                             }
 
                             var client = GetClientFromToken(token);
-
-                            // Backfill
-                            if (string.IsNullOrWhiteSpace(token.BearerToken))
-                            {
-                                try
-                                {
-                                    var tokenStr = await client.Auth.CreateBearerTokenAsync();
-                                    token.BearerToken = tokenStr;
-                                    await Context.SaveChangesAsync();
-                                }
-                                catch (Exception ex)
-                                {
-                                    Console.WriteLine("Failed to create bearer token: " + ex.ToString());
-                                }
-                            }
-
                             tracker = new TwitterClientTracker(token, client);
                         }
 
@@ -202,7 +193,7 @@ namespace FurlandGraph.Services
 
                         if (count++ % 1000 == 0)
                         {
-                            Console.WriteLine($"[{DateTime.UtcNow}] Total workers: {trackers.Count}");
+                            Console.WriteLine($"[{DateTime.UtcNow}] Total workers: {trackers.Count} (Completed: {trackers.Where(t => t.Key.IsCompleted).Count()})");
                         }
                     }
                 }
@@ -306,7 +297,7 @@ namespace FurlandGraph.Services
 
             bool result = await HarvestInner(dbContext, workItem, tracker);
 
-            if(result)
+            if (result)
             {
                 dbContext.WorkItems.Remove(workItem);
                 await dbContext.SaveChangesAsync();

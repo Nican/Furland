@@ -104,6 +104,21 @@ namespace FurlandGraph.Services
                 }
             }
 
+            var position = await GetQueuePosition(requesterId);
+
+            if (position != -1)
+            {
+                return new LoadStatus()
+                {
+                    Id = user.Id,
+                    ScreenName = user.ScreenName,
+                    TotalWorkItems = await Context.WorkItems.Where(t=> t.ForUser == requesterId.Value).CountAsync(),
+                    NeedCollectedCount = position,
+                    Finished = false,
+                    Stage = -1,
+                    RequesterId = requesterId,
+                };
+            }
 
             var userFriends = await LoadUserFriends(user, nodes, requesterId, canAddWork);
             if (userFriends != null)
@@ -118,10 +133,11 @@ namespace FurlandGraph.Services
 
             var followers = await Context.Users
                 .Where(t => relationList.Contains(t.Id))
-                .Select(t => new BasicUser { 
-                    Id = t.Id, 
-                    Deleted = t.Deleted, 
-                    LastUpdate = t.LastUpdate, 
+                .Select(t => new BasicUser
+                {
+                    Id = t.Id,
+                    Deleted = t.Deleted,
+                    LastUpdate = t.LastUpdate,
                     Protected = t.Protected,
                     FollowersCollected = t.FollowersCollected,
                     FollowersCount = t.FollowersCount,
@@ -372,7 +388,7 @@ namespace FurlandGraph.Services
 
         private async Task<long> GetQueuePosition(long? userId)
         {
-            if(!userId.HasValue)
+            if (!userId.HasValue)
             {
                 return -1;
             }

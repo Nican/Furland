@@ -10,9 +10,11 @@ import { button, buttonGroup, useControls } from 'leva';
 import { BasicEdges, HeapOrderedEdges, TopNEdges } from './Edge';
 import { saveAsPng } from './Png';
 import louvain from 'graphology-communities-louvain';
+import Sigma from 'sigma';
+import getNodeImageProgram from "./sigmaImage";
 
 let screenSize = 12000;
-let nodeRadius = 16;
+let nodeRadius = 2;
 
 interface TwitterGraphProps {
   screenName: string;
@@ -20,8 +22,7 @@ interface TwitterGraphProps {
 }
 
 interface TwitterGraphState {
-  selectedNode?: number;
-  hover?: number;
+
 }
 
 interface StatsDetail {
@@ -173,93 +174,65 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
   private layout?: FA2Layout;
   private graph: Graph;
   private data: TwitterData;
-  private edgeRef: React.RefObject<SVGGElement>;
-  private updateId = 0;
+  private container: React.RefObject<HTMLDivElement>;
+  private renderer: Sigma | undefined;
 
   constructor(props: any) {
     super(props);
 
-    this.mouseEnter = this.mouseEnter.bind(this);
-    this.onMouseClick = this.onMouseClick.bind(this);
-    this.edgeRef = React.createRef();
-
     this.state = {
-      selectedNode: undefined,
     };
 
     this.data = new TwitterData(props.inputData);
     this.graph = new Graph();
-
-    this.graph.on('eachNodeAttributesUpdated', this.onEachNodeAttributesUpdated.bind(this));
+    this.container = React.createRef();
 
     props.reset.current = this.reset.bind(this);
     props.saveAsPng.current = this.saveAsPng.bind(this);
 
     this.data.followerData.forEach((item, idx) => {
-      const ref = React.createRef();
       const maxSize = Math.max(item.followersCount, item.followersCount);
       let size = Math.sqrt(Math.min(maxSize, 10000)) / Math.sqrt(10000) * nodeRadius * 2 + nodeRadius;
       let x = (Math.random() - 0.5) * screenSize;
       let y = (Math.random() - 0.5) * screenSize;
-      let fixed = false;
 
       if (item.screenName === this.props.screenName) {
         size = nodeRadius * 4;
       }
 
-      this.graph.addNode(idx, { id: idx, size, x, y, ref, fixed });
+      console.log(item, size);
+
+      this.graph.addNode(idx, {
+        id: idx,
+        size,
+        x,
+        y,
+        fixed: false,
+        type: 'image',
+        image: `/api/twitter/${item.id}/picture`,
+      });
     });
     this.setupEdges();
     this.reset();
 
   }
 
-  onMouseClick(idx: number) {
-    this.setState({ selectedNode: idx });
-  }
-
-  mouseEnter(idx: number) {
-    // Old node
-    if (this.state.hover) {
-      const oldEdgeElemenets = this.graph.getNodeAttribute(this.state.hover, 'edgeElements');
-
-      if (oldEdgeElemenets) {
-        for (const elem of oldEdgeElemenets) {
-          elem.parentNode.removeChild(elem);
-        }
-      }
-
-      this.graph.setNodeAttribute(this.state.hover, 'edgeElements', undefined);
-    }
-
-
-    this.setState({ hover: idx });
-
-    const edgeRef = this.edgeRef.current;
-    if (idx && edgeRef) {
-      const lines: any[] = [];
-
-      this.graph.forEachNeighbor(idx, (neighbor, attr) => {
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'polygon') as SVGPolygonElement;
-        // line.setAttribute('stroke', 'white');
-        // line.setAttribute('strokeWidth', '0');
-        line.setAttribute('graph-id', neighbor);
-
-        lines.push(line);
-        edgeRef.appendChild(line);
-      });
-
-      this.graph.setNodeAttribute(idx, 'edgeElements', lines);
-    }
-
-    this.renderEdges();
-  }
-
   public override componentDidMount() {
+
     this.clearupNodes();
+    this.renderer = new Sigma(this.graph, this.container.current!, {
+      // We don't have to declare edgeProgramClasses here, because we only use the default ones ("line" and "arrow")
+      nodeProgramClasses: {
+        image: getNodeImageProgram(),
+        // border: NodeProgramBorder,
+      },
+      // renderEdgeLabels: true,
+    });
+
   }
 
   public override componentWillUnmount() {
+    this.renderer?.kill();
     this.layout?.kill();
   }
 
@@ -288,41 +261,6 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
     );
 
     this.setupForceAtlas();
-  }
-
-  onEachNodeAttributesUpdated() {
-    this.graph.forEachNode((_idx, attr) => {
-      const ref = attr.ref.current;
-      if (ref) {
-        ref.setAttribute('cx', attr.x);
-        ref.setAttribute('cy', attr.y);
-      }
-    });
-
-    this.renderEdges();
-  }
-
-  renderEdges() {
-    if (this.state.hover && this.edgeRef.current) {
-      const x = this.graph.getNodeAttribute(this.state.hover, 'x');
-      const y = this.graph.getNodeAttribute(this.state.hover, 'y');
-      const edgeElements = this.graph.getNodeAttribute(this.state.hover, 'edgeElements') as SVGPolygonElement[];
-
-      if (edgeElements) {
-        const count = edgeElements.length;
-        let id = 0;
-        for (const elem of edgeElements) {
-          const graphId = elem.getAttribute('graph-id');
-          if (graphId) {
-            const other = this.graph.getNodeAttributes(graphId);
-
-            elem.setAttribute('points', `${x + 10},${y} ${other.x},${other.y} ${x - 10},${y}`);
-            elem.setAttribute('fill', `rgba(255,255,255,${id / count})`);
-            id++;
-          }
-        }
-      }
-    }
   }
 
   setupEdges() {
@@ -359,14 +297,10 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
     const graphConfig = config.graph;
     let nodes = 0;
     let maxCommunity = 1;
-    const communityMap: { [key: number]: number } = {};
 
     this.graph.forEachNode((_idx, attr) => {
       if (!attr.fixed) {
-        if(communityMap[attr.community] === undefined) {
-          communityMap[attr.community] = maxCommunity;
-          maxCommunity++;
-        }
+        maxCommunity = Math.max(maxCommunity, attr.community);
       }
     });
 
@@ -374,8 +308,7 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
     graph.updateEachNodeAttributes(
       function (node, attr) {
         const empty = graph.degree(node) === 0;
-        const c = communityMap[attr.community];
-        const color = `hsl(${c / maxCommunity * 360}, 100%, 50%)`;
+        const color = `hsl(${attr.community / maxCommunity * 360}, 100%, 50%)`;
 
         if (attr.fixed !== empty) {
           attr.fixed = empty;
@@ -386,13 +319,6 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
 
         if (!empty) {
           nodes++;
-        }
-
-        const ref = attr.ref.current;
-        if (ref) {
-          ref.style.display = empty ? 'none' : null;
-          ref.setAttribute('fill', graphConfig.images ? `url(#profileImage${attr.id})` : color);
-          ref.setAttribute('stroke', graphConfig.images && graphConfig.stroke ? color : '');
         }
         return attr;
       },
@@ -444,9 +370,9 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
     const followerData = data.followerData;
 
     // <button onClick={this.saveAsPng}>Save as PNG</button>
-    return <>
-      <div style={{ position: 'absolute', left: '0px', width: '200px', top: '0px', bottom: '0px', overflow: 'auto' }}>
-        {this.state.selectedNode && (<UserNodeDetails
+    /* 
+    <div style={{ position: 'absolute', left: '0px', width: '200px', top: '0px', bottom: '0px', overflow: 'auto' }}>
+            {this.state.selectedNode && (<UserNodeDetails
           graph={this.graph}
           selected={this.state.selectedNode}
           followerData={followerData}
@@ -455,139 +381,15 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
           mutualOnly={this.props.config.edge.mutualsOnly}
           mouseEnter={this.mouseEnter}
         />)}
-      </div>
-      <div style={{ position: 'absolute', left: '200px', right: '0px', top: '0px', bottom: '0px', overflow: 'hidden' }}>
-        <MovableCanvas width={screenSize} height={screenSize}>
-          <svg style={{ height: "100%", width: "100%" }}>
-            <SVGProfilePics followerData={followerData} />
-            <g transform={`translate(${cx}, ${cy})`}>
-              <g ref={this.edgeRef} />
-
-              <GraphNodes
-                graph={this.graph}
-                mouseEnter={this.mouseEnter}
-                onMouseClick={this.onMouseClick}
-                followerData={followerData}
-              />
-            </g>
-          </svg>
-        </MovableCanvas>
-      </div>
-    </>;
-
-  }
-}
-
-interface GraphNodesProps {
-  graph: Graph;
-  mouseEnter(name: number | null): void;
-  onMouseClick(name: number): void;
-  followerData: TwitterUserData[];
-}
-
-class GraphNodes extends Component<GraphNodesProps>  {
-
-  shouldComponentUpdate(nextProps: GraphNodesProps) {
-    return nextProps.graph !== this.props.graph;
-  }
-
-  render() {
-    const { graph, mouseEnter, onMouseClick, followerData } = this.props;
-
+        </div>
+    */
     return <>
-      {
-        graph.mapNodes((item, attr) => {
-          const idx = attr.id;
-          const user = followerData[idx];
+      <div style={{ position: 'absolute', left: '0px', right: '0px', top: '0px', bottom: '0px', overflow: 'hidden' }} >
+        <div style={{ width: '100%', height: '100%', margin: 0, padding: 0, overflow: 'hidden' }} ref={this.container}>
 
-          return <UserNode
-            screenName={user?.screenName}
-            nodeRef={attr.ref}
-            idx={idx}
-            key={idx}
-            id={user.id}
-            nodeRadius={attr.size / 2}
-            mouseEnter={mouseEnter}
-            onMouseClick={onMouseClick}
-          />;
-        })
-      }
+        </div>
+      </div>
     </>;
-  }
-}
 
-interface SVGProfilePicsProps {
-  followerData: TwitterUserData[];
-}
-
-class SVGProfilePics extends Component<SVGProfilePicsProps>  {
-
-  shouldComponentUpdate(nextProps: GraphNodesProps) {
-    return nextProps.followerData !== this.props.followerData;
-  }
-
-  render() {
-    const { followerData } = this.props;
-
-    return <defs>
-      {
-        followerData.map((item, idx) => {
-          if (item == null) {
-            return undefined;
-          }
-
-          return <pattern key={idx} id={`profileImage${idx}`} x="0%" y="0%" height="100%" width="100%"
-            viewBox="0 0 48 48">
-            <image x="0%" y="0%" width="48" height="48" xlinkHref={`/api/twitter/${item.id}/picture`} id={`twitterImage${idx}`} />
-          </pattern>;
-        })
-      }
-    </defs>;
-  }
-}
-
-interface UserNodeProps {
-  idx: number;
-  id: string;
-  screenName: string;
-  nodeRadius: number;
-  nodeRef: React.LegacyRef<SVGCircleElement>;
-  mouseEnter(name: number | null): void;
-  onMouseClick(name: number): void;
-}
-
-class UserNode extends Component<UserNodeProps> {
-  constructor(props: UserNodeProps) {
-    super(props);
-
-    this.onMouseClick = this.onMouseClick.bind(this);
-    this.onMouseEnter = this.onMouseEnter.bind(this);
-    this.onMouseLeave = this.onMouseLeave.bind(this);
-  }
-
-  onMouseEnter() {
-    this.props.mouseEnter(this.props.idx);
-  }
-
-  onMouseLeave() {
-    this.props.mouseEnter(null);
-  }
-
-  onMouseClick() {
-    this.props.onMouseClick(this.props.idx);
-  }
-
-  render() {
-    const { idx, nodeRadius } = this.props;
-
-    return <circle
-      onClick={this.onMouseClick}
-      onMouseOver={this.onMouseEnter}
-      onMouseLeave={this.onMouseLeave}
-      fill={`url(#profileImage${idx})`}
-      ref={this.props.nodeRef}
-      r={nodeRadius}
-      strokeWidth="2"
-    />;
   }
 }

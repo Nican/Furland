@@ -16,5 +16,7 @@ namespace FurlandGraph.Models
         public List<long> UserIds { get; set; }
 
         public string Cursor { get; set; }
+
+        public User User { get; set; }
     }
 }

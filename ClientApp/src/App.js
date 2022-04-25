@@ -1,5 +1,4 @@
 import React, { Component, useEffect, useState } from 'react';
-import { TwitterGraph } from './graph/TwitterGraph';
 import { Switch, Route, useParams, Redirect } from 'react-router-dom';
 import { LoginTwitterButton } from './components/LoginButton';
 import { GraphFrame } from './graph/Frame';

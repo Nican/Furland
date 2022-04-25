@@ -41,7 +41,7 @@ namespace FurlandGraph.Migrations
   ""bearerToken"" VARCHAR (1024) NOT NULL,
   ""nextFriendsRequest"" timestamp NOT NULL,
   ""accessToken"" VARCHAR (1024) NOT NULL,
-  ""accessSecret"" VARCHAR (1024) NOT NULL,
+  ""accessSecret"" VARCHAR (1024) NOT NULL
 )");
 
             Execute(@"CREATE TABLE public.""workItem"" (
