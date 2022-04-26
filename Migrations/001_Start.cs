@@ -38,7 +38,7 @@ namespace FurlandGraph.Migrations
 )");
             Execute(@"CREATE TABLE public.""twitterToken"" (
     id INT8 PRIMARY KEY,
-  ""bearerToken"" VARCHAR (1024) NOT NULL,
+  ""bearerToken"" VARCHAR (1024) NULL,
   ""nextFriendsRequest"" timestamp NOT NULL,
   ""accessToken"" VARCHAR (1024) NOT NULL,
   ""accessSecret"" VARCHAR (1024) NOT NULL
