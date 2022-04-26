@@ -21,13 +21,15 @@ namespace FurlandGraph.Services
     {
         public static readonly long MaxAccountSize = 150000;
 
-        public MatrixService(FurlandContext context, IOptions<HarvesterConfig> harvestConfiguration)
+        public MatrixService(FurlandContext context, IDbContextFactory<FurlandContext> contextFactory, IOptions<HarvesterConfig> harvestConfiguration)
         {
             Context = context;
+            ContextFactory = contextFactory;
             HarvestConfiguration = harvestConfiguration;
         }
 
         public FurlandContext Context { get; }
+        public IDbContextFactory<FurlandContext> ContextFactory { get; }
         public IOptions<HarvesterConfig> HarvestConfiguration { get; }
 
         public async Task RunAsync()
@@ -103,10 +105,13 @@ namespace FurlandGraph.Services
 
             userFriends = users.Select(t => t.Id).ToList();
 
+            /*
             var relationMap = await Context.UserRelations
                 .Where(t => t.Type == relationship && userFriends.Contains(t.UserId))
                 .AsNoTracking()
                 .ToDictionaryAsync(t => t.UserId, cancellationToken);
+            */
+            var relationMap = await GetParallelRelations(userFriends, relationship);
 
             // We need to keep the order of userFriends
             var relations = userFriends.Select(t => relationMap.ContainsKey(t) ? relationMap[t].List.ToArray() : Array.Empty<long>()).ToList();
@@ -147,6 +152,33 @@ namespace FurlandGraph.Services
             item.FinishedAt = DateTime.UtcNow;
             await Context.SaveChangesAsync();
 
+        }
+
+        private async Task<Dictionary<long, UserRelations>> GetParallelRelations(List<long> userFriends, string relationship)
+        {
+            var size = Math.Max(userFriends.Count / 20, 100);
+            var userRelations = new Dictionary<long, UserRelations>();
+
+            var chunks = userFriends.Chunk(size).Select(async chunk =>
+            {
+                using var dbContext = await ContextFactory.CreateDbContextAsync();
+                return await dbContext.UserRelations
+                    .Where(t => t.Type == relationship && chunk.Contains(t.UserId))
+                    .AsNoTracking()
+                    .ToListAsync();
+            }).ToList();
+
+            await Task.WhenAll(chunks);
+
+            foreach (var chunk in chunks)
+            {
+                foreach (var result in await chunk)
+                {
+                    userRelations.Add(result.UserId, result);
+                }
+            }
+
+            return userRelations;
         }
 
         private unsafe List<int> GetMutualMatrix(List<long[]> relations)

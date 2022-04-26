@@ -43,15 +43,20 @@ const TwitterLogin = () => {
     const [loginResponse, setLoginResponse] = useState(null);
 
     useEffect(async () => {
-        const response = await fetch(`/api/twitter/validate${window.location.search}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-        const json = await response.json();
+        try {
+            const response = await fetch(`/api/twitter/validate${window.location.search}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const json = await response.json();
 
-        setLoginResponse(json);
-        localStorage.setItem('userId', json.id);
+            setLoginResponse(json);
+            localStorage.setItem('userId', json.id);
+        } catch (e) {
+            console.log(e);
+            alert('Login failed. Please try again.');
+        }
     }, []);
 
     if (loginResponse) {

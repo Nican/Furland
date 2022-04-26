@@ -15,6 +15,10 @@ export class LoginTwitterButton extends Component {
       const json = await response.json();
       window.location = json.authorizationURL;
     }
+    catch(e) {
+      console.log(e);
+      alert('Login failed. Please try again.');
+    }
     finally {
       this.setState({ loading: false });
     }
