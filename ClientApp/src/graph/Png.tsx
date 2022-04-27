@@ -60,7 +60,7 @@ export function saveAsPng(graph: Graph, screenName: string, stroke: boolean) {
   });
 
   const downloadLink = document.createElement('a');
-  downloadLink.setAttribute('download', `${screenName}.png`);
+  downloadLink.setAttribute('download', `furland_${screenName}.png`);
   const dataURL = canvas.toDataURL('image/png');
   downloadLink.setAttribute('href', dataURL);
   downloadLink.click();
