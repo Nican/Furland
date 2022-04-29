@@ -47,15 +47,15 @@ namespace FurlandGraph.Services
                 dbContext.Users.Add(dbUser);
             }
 
-            dbUser.Name = user.Name;
-            dbUser.ProfileImageUrl = user.ProfileImageUrl;
+            dbUser.Name = Cleanup(user.Name) ?? "";
+            dbUser.ProfileImageUrl = Cleanup(user.ProfileImageUrl);
             dbUser.FollowersCount = user.FollowersCount;
             dbUser.FriendsCount = user.FriendsCount;
-            dbUser.ScreenName = user.ScreenName;
+            dbUser.ScreenName = Cleanup(user.ScreenName);
             dbUser.StatusesCount = user.StatusesCount;
             dbUser.Protected = user.Protected;
             dbUser.Verified = user.Verified;
-            dbUser.ProfileImageUrlFullSize = user.ProfileImageUrlFullSize;
+            dbUser.ProfileImageUrlFullSize = Cleanup(user.ProfileImageUrlFullSize);
             dbUser.LastUpdate = DateTime.UtcNow;
             dbUser.Deleted = false;
 
@@ -66,7 +66,7 @@ namespace FurlandGraph.Services
 
             try
             {
-                if (!string.IsNullOrEmpty(dbUser.ProfileImageUrlFullSize))
+                if (!string.IsNullOrEmpty(dbUser.ProfileImageUrl))
                 {
                     var image = await HttpClient.GetByteArrayAsync(dbUser.ProfileImageUrl);
                     // var sqlParam = new NpgsqlParameter("data", image);
@@ -80,6 +80,17 @@ namespace FurlandGraph.Services
 
             await dbContext.SaveChangesAsync();
             return dbUser;
+        }
+
+        private string Cleanup(string input)
+        {
+            // Note: https://twitter.com/Nican/status/1519372597678407681
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return null;
+            }
+
+            return input.Replace("\0", string.Empty).Trim();
         }
     }
 }

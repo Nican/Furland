@@ -19,7 +19,7 @@ namespace FurlandGraph.Services
 
     public class MatrixService
     {
-        public static readonly long MaxAccountSize = 150000;
+        public static readonly long MaxAccountSize = 200000;
 
         public MatrixService(FurlandContext context, IDbContextFactory<FurlandContext> contextFactory, IOptions<HarvesterConfig> harvestConfiguration)
         {
@@ -112,6 +112,7 @@ namespace FurlandGraph.Services
                 .ToDictionaryAsync(t => t.UserId, cancellationToken);
             */
             var relationMap = await GetParallelRelations(userFriends, relationship);
+            var profilePics = await Context.ProfilePictures.Where(t => userFriends.Contains(t.Id)).ToDictionaryAsync(t=> t.Id);
 
             // We need to keep the order of userFriends
             var relations = userFriends.Select(t => relationMap.ContainsKey(t) ? relationMap[t].List.ToArray() : Array.Empty<long>()).ToList();
@@ -119,7 +120,7 @@ namespace FurlandGraph.Services
             Stopwatch watch = new Stopwatch();
             watch.Start();
             var muturalMatrix = GetMutualMatrix(relations);
-            Console.WriteLine($"Time to complete: {watch.Elapsed.TotalSeconds} seconds.");
+            Console.WriteLine($"Time to complete: {watch.Elapsed.TotalSeconds} seconds. (Size: {userFriends.Count})");
 
             var cacheItem = new GraphCacheItem()
             {
@@ -143,6 +144,7 @@ namespace FurlandGraph.Services
                         StatusesCount = friend.StatusesCount,
                         LastStatus = friend.LastStatus,
                         Friends = mutuals,
+                        Avatar = profilePics.ContainsKey(friend.Id) ? profilePics[friend.Id].Data : null,
                     };
                 }).ToList(),
                 MutualMatrix = muturalMatrix,
@@ -253,30 +255,6 @@ namespace FurlandGraph.Services
 
     public class Relation
     {
-        private readonly List<long> list;
-
-        public int position = 0;
-
-        public long Value
-        {
-            get { return list[position]; }
-        }
-
-        public Relation(List<long> list)
-        {
-            this.list = list;
-        }
-
-        public void Advance()
-        {
-            position++;
-        }
-
-        public bool IsPastEnd()
-        {
-            return position >= list.Count - 1;
-        }
-
         /// <summary>
         /// Pointer implementation 
         /// 28 seconds for pointer path
@@ -387,24 +365,30 @@ namespace FurlandGraph.Services
 
         public static List<long> Merge(List<long> leftList, List<long> rightList)
         {
-            Relation left = new Relation(leftList);
-            Relation right = new Relation(rightList);
+            int leftCount = leftList.Count;
+            int rightCount = rightList.Count;
+            int leftPosition = 0;
+            int rightPosition = 0;
             List<long> output = new();
-            while (!left.IsPastEnd() && !right.IsPastEnd())
+
+            while (leftPosition < leftCount && rightPosition < rightCount)
             {
-                if (left.Value == right.Value)
+                long leftValue = leftList[leftPosition];
+                long rightValue = rightList[rightPosition];
+
+                if (leftValue == rightValue)
                 {
-                    output.Add(left.Value);
-                    left.Advance();
-                    right.Advance();
+                    output.Add(leftValue);
+                    leftPosition++;
+                    rightPosition++;
                 }
-                else if (left.Value < right.Value)
+                else if (leftValue < rightValue)
                 {
-                    left.Advance();
+                    leftPosition++;
                 }
                 else
                 {
-                    right.Advance();
+                    rightPosition++;
                 }
             }
             return output;

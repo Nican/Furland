@@ -76,7 +76,7 @@ export const TwitterGraphWithConfig: React.FC<TwitterGraphProps> = props => {
       max: 100,
       render: () => false,
     },
-    images: true,
+    images: props.inputData.friends.length <= 3000, // Disable images by default on graphs > 3k nodes
     stroke: {
       value: true,
       render: (get: any) => get('Graph.images') === true,
@@ -115,6 +115,10 @@ export const TwitterGraphWithConfig: React.FC<TwitterGraphProps> = props => {
           saveAsPngRef.current();
         }
       })
+    },
+    Twitter: {
+      value: `Please tag posts with #bunnypaws`,
+      editable: false,
     },
   }));
 
@@ -274,7 +278,7 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
   }
 
   saveAsPng() {
-    saveAsPng(this.graph, this.props.screenName, this.props.config.graph.stroke);
+    saveAsPng(this.graph, this.props.inputData.friends, this.props.screenName, this.props.config.graph.stroke);
   }
 
   reset() {
@@ -363,7 +367,7 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
 
     this.graph.forEachNode((_idx, attr) => {
       if (!attr.fixed) {
-        if(communityMap[attr.community] === undefined) {
+        if (communityMap[attr.community] === undefined) {
           communityMap[attr.community] = maxCommunity;
           maxCommunity++;
         }
@@ -536,9 +540,17 @@ class SVGProfilePics extends Component<SVGProfilePicsProps>  {
             return undefined;
           }
 
+          let src = `/api/twitter/${item.id}/picture`;
+
+          if (item.avatar) {
+            src = URL.createObjectURL(
+              new Blob([item.avatar], { type: 'image/png' })
+            );
+          }
+
           return <pattern key={idx} id={`profileImage${idx}`} x="0%" y="0%" height="100%" width="100%"
             viewBox="0 0 48 48">
-            <image x="0%" y="0%" width="48" height="48" xlinkHref={`/api/twitter/${item.id}/picture`} id={`twitterImage${idx}`} />
+            <image x="0%" y="0%" width="48" height="48" xlinkHref={src} id={`twitterImage${idx}`} />
           </pattern>;
         })
       }

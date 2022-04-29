@@ -5,6 +5,7 @@ export interface TwitterUserData {
     friendsCount: number;
     followersCount: number;
     friends: Set<string>;
+    avatar: Uint8Array;
 }
 
 export interface InputData {

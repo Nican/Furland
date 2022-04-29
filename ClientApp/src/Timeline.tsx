@@ -7,6 +7,7 @@ export const NicanTimeline: React.FC = () => {
     <div>
       <p>This is a pet project, running on a home server. Please be gentle and patient.</p>
       <p>Furland displays all of your friends (nodes) in a graph, and adds edges based on how many followers (connections) each two persons have in common. Edges with higher value take priority to be added into the graph until each node has "TopN" connections. </p>
+      <p>TL;DR: Proximity = same followers.</p>
       <p>
         Hope you enjoy the project. If you want to leave a tip:
         <ul>

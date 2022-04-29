@@ -50,5 +50,8 @@ namespace FurlandGraph.Models
 
         [Key("friends")]
         public List<string> Friends { get; set; }
+
+        [Key("avatar")]
+        public byte[] Avatar { get; set; }
     }
 }

@@ -213,7 +213,7 @@ export class HeapOrderedEdges extends BaseEdgeClass {
       const y = sliceItem.idx;
       item.sliceId++;
 
-      const maxTopValue = item.slice[0].value; // Math.max(item.slice[0].value, otherSlide.slice[0].value);
+      const maxTopValue = Math.max(item.slice[0].value, otherSlide.slice[0].value); // item.slice[0].value
       if (sliceItem.value < (maxTopValue * maxFriendRatio)) {
         continue;
       }

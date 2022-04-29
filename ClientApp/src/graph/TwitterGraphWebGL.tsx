@@ -247,7 +247,7 @@ export class TwitterGraph extends Component<TwitterGraphPropsInner, TwitterGraph
   }
 
   saveAsPng() {
-    saveAsPng(this.graph, this.props.screenName, this.props.config.graph.stroke);
+    // saveAsPng(this.graph, this.props.inputData.friends, this.props.screenName, this.props.config.graph.stroke);
   }
 
   reset() {

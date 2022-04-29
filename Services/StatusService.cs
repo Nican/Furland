@@ -41,6 +41,10 @@ namespace FurlandGraph.Services
 
     public class StatusService
     {
+        public long MaxGraphSize = 12000;
+
+        public int MaxPageSize = 20000;
+
         public StatusService(FurlandContext context, IOptions<TwitterConfiguration> twitterConfiguration, UserService userService)
         {
             Context = context;
@@ -83,13 +87,13 @@ namespace FurlandGraph.Services
                 throw new AccountIsProtectedException();
             }
 
-            if (nodes == "friends" && user.FriendsCount > 10000)
+            if (nodes == "friends" && user.FriendsCount > MaxGraphSize)
             {
-                throw new TooManyNodesExepction("Can not render more than 10,000 nodes");
+                throw new TooManyNodesExepction($"Can not render more than {MaxGraphSize} nodes");
             }
-            else if (nodes == "followers" && user.FollowersCount > 10000)
+            else if (nodes == "followers" && user.FollowersCount > MaxGraphSize)
             {
-                throw new TooManyNodesExepction("Can not render more than 10,000 nodes");
+                throw new TooManyNodesExepction($"Can not render more than {MaxGraphSize} nodes");
             }
 
             if (!requesterId.HasValue || user.Id != requesterId.Value)
@@ -191,7 +195,12 @@ namespace FurlandGraph.Services
         public async Task<LoadStatus> LoadUserFriends(BasicUser user, string nodes, long? requesterId, bool canAddWork)
         {
             DateTime? collectedNodes = nodes == "friends" ? user.FriendsCollected : user.FollowersCollected;
-            if (!collectedNodes.HasValue || collectedNodes.Value < Past)
+            var exists = await Context.UserRelations
+                .Where(t => t.UserId == user.Id && t.Type == nodes)
+                .Select(t => t.List)
+                .AnyAsync();
+
+            if (!collectedNodes.HasValue || collectedNodes.Value < Past || !exists)
             {
                 if (!await Context.WorkItems.Where(t => t.UserId == user.Id && t.Type == nodes).AnyAsync())
                 {
@@ -252,7 +261,7 @@ namespace FurlandGraph.Services
                     .Select(t => t.UserId)
                     .ToListAsync();
 
-                    Context.WorkItems.AddRange(needUserCollect.Take(2000).Except(doNotAdd).Select(t =>
+                    Context.WorkItems.AddRange(needUserCollect.Take(MaxPageSize).Except(doNotAdd).Select(t =>
                     {
                         return new WorkItem()
                         {
@@ -317,7 +326,7 @@ namespace FurlandGraph.Services
                         .Select(t => t.UserId)
                         .ToListAsync();
 
-                    Context.WorkItems.AddRange(needCollected.Take(2000).Where(t => !doNotAdd.Contains(t.Id)).Select(t =>
+                    Context.WorkItems.AddRange(needCollected.Take(MaxPageSize).Where(t => !doNotAdd.Contains(t.Id)).Select(t =>
                     {
                         return new WorkItem()
                         {
@@ -380,7 +389,7 @@ namespace FurlandGraph.Services
                 ScreenName = user.ScreenName,
                 TotalWorkItems = await Context.GraphCache.Where(t => t.FinishedAt == null).CountAsync(),
                 NeedCollectedCount = !createdAt.HasValue ? 0 : await Context.GraphCache.Where(t => t.FinishedAt == null && t.CreatedAt < createdAt).CountAsync(),
-                Finished = cacheItem.FinishedAt.HasValue,
+                Finished = cacheItem?.FinishedAt.HasValue ?? false,
                 Stage = 4,
                 RequesterId = requesterId,
             };
