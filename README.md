@@ -19,7 +19,8 @@ GRANT ALL PRIVILEGES ON DATABASE furland TO furland;
 
 ## 3. Twitter App 
 1. Go to [Twitter Developer site](https://developer.twitter.com/en/apps)
-2. Save the "API key" and "API secret key"
+2. Set the Redirect URI as "https://localhost:44417/validate/twitter"
+3. Save the "API key" and "API secret key"
 
 # Building Instructions
 

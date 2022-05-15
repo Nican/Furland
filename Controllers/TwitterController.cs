@@ -52,8 +52,8 @@ namespace FurlandGraph.Controllers
             var appClient = new TwitterClient(twitterConfig.ConsumerKey, twitterConfig.ConsumerSecret);
 
             var authenticationRequestId = Guid.NewGuid().ToString();
-            // var redirectPath = "https://" + Request.Host.Value + "/validate/twitter";
-            var redirectPath = "https://graph.bunnypa.ws/validate/twitter";
+            var redirectPath = "https://" + Request.Host.Value + "/validate/twitter";
+            // var redirectPath = "https://graph.bunnypa.ws/validate/twitter";
 
             // Add the user identifier as a query parameters that will be received by `ValidateTwitterAuth`
             var redirectURL = _myAuthRequestStore.AppendAuthenticationRequestIdToCallbackUrl(redirectPath, authenticationRequestId);
