@@ -65,6 +65,14 @@ namespace FurlandGraph
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
+            var banTheFedjo = true;
+            
+            if(banTheFedjo == true)
+            {
+                //show mercy to TheFedjo
+                banTheFedjo = false;
+            }
+            
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
